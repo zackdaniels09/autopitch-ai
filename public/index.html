@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AutoPitch AI</title>
+    <style>
+      body { font-family: system-ui, Arial, sans-serif; max-width: 800px; margin: 32px auto; padding: 0 16px; }
+      textarea, input, button { width: 100%; font-size: 16px; }
+      textarea { height: 140px; }
+      .row { margin: 12px 0; }
+      .out { white-space: pre-wrap; border: 1px solid #ddd; padding: 12px; border-radius: 8px; }
+      .muted { color:#666; font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <h1>AutoPitch AI</h1>
+    <p class="muted">Paste a job description and your skills. Click Generate.</p>
+
+    <div class="row">
+      <label>Job description</label>
+      <textarea id="job" placeholder="Paste the client post or job details here..."></textarea>
+    </div>
+
+    <div class="row">
+      <label>Your skills/services</label>
+      <textarea id="skills" placeholder="Describe your services and strengths..."></textarea>
+    </div>
+
+    <button id="go">Generate Email</button>
+
+    <h2>Result</h2>
+    <div id="result" class="out">No result yet.</div>
+
+    <script>
+      const go = document.getElementById('go');
+      const $ = (id) => document.getElementById(id);
+
+      go.onclick = async () => {
+        const job = $('job').value.trim();
+        const skills = $('skills').value.trim();
+        if (!job || !skills) { alert('Please fill both fields.'); return; }
+
+        $('result').textContent = 'Generating...';
+
+        try {
+          const res = await fetch('/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job, skills })
+          });
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            $('result').textContent = 'Error: ' + (data?.error || res.status);
+            console.error('Server error:', data);
+            return;
+          }
+
+          const subject = data.subject || data.raw || '(no subject)';
+          const body = data.body || data.raw || '';
+          $('result').innerHTML = `<strong>Subject:</strong> ${subject}<br><br>${body}`;
+        } catch (e) {
+          $('result').textContent = 'Network error: ' + e.message;
+        }
+      };
+    </script>
+  </body>
+</html>
