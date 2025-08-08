@@ -1,4 +1,4 @@
-// index.js (final)
+// index.js (tone-enabled)
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -10,10 +10,9 @@ const PORT = process.env.PORT || 3000; // Render provides PORT
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'; // safe default
 
-// Helper: extract JSON when the model wraps it in code fences/backticks
+// Helps if model returns ```json fenced blocks.
 function extractJson(text) {
   if (!text || typeof text !== 'string') return null;
-  // Try fenced block first: ```json ... ``` or ``` ... ```
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   const candidate = fence ? fence[1] : text;
   const start = candidate.indexOf('{');
@@ -25,15 +24,14 @@ function extractJson(text) {
 }
 
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public'))); // serve /public
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Root serves the frontend UI
 app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.post('/generate', async (req, res) => {
-  const { job, skills } = req.body || {};
+  const { job, skills, tone } = req.body || {};
 
   if (!OPENAI_API_KEY) {
     return res.status(500).json({ error: 'Server missing OPENAI_API_KEY' });
@@ -42,7 +40,9 @@ app.post('/generate', async (req, res) => {
     return res.status(400).json({ error: 'Missing job or skills in request body.' });
   }
 
-  const prompt = `Write a cold outreach email based on the following:
+  const selectedTone = (tone || 'Friendly').trim();
+
+  const prompt = `Write a cold outreach email in a ${selectedTone} tone based on the following:
 
 Job description: ${job}
 Freelancer skills: ${skills}

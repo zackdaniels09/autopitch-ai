@@ -6,16 +6,19 @@
     <title>AutoPitch AI</title>
     <style>
       body { font-family: system-ui, Arial, sans-serif; max-width: 800px; margin: 32px auto; padding: 0 16px; }
-      textarea, input, button { width: 100%; font-size: 16px; }
+      textarea, input, button, select { width: 100%; font-size: 16px; }
       textarea { height: 140px; }
       .row { margin: 12px 0; }
-      .out { white-space: pre-wrap; border: 1px solid #ddd; padding: 12px; border-radius: 8px; }
+      .out { white-space: pre-wrap; border: 1px solid #ddd; padding: 12px; border-radius: 8px; background: #fff; }
       .muted { color:#666; font-size: 14px; }
+      .inline { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
+      button { padding: 10px; }
+      label { font-weight: 600; display:block; margin-bottom: 6px; }
     </style>
   </head>
   <body>
     <h1>AutoPitch AI</h1>
-    <p class="muted">Paste a job description and your skills. Click Generate.</p>
+    <p class="muted">Paste a job description and your skills. Choose a tone. Click Generate.</p>
 
     <div class="row">
       <label>Job description</label>
@@ -27,7 +30,19 @@
       <textarea id="skills" placeholder="Describe your services and strengths..."></textarea>
     </div>
 
-    <button id="go">Generate Email</button>
+    <div class="row inline">
+      <div>
+        <label for="tone">Tone</label>
+        <select id="tone">
+          <option>Friendly</option>
+          <option>Formal</option>
+          <option>Bold & Direct</option>
+          <option>Conversational</option>
+          <option>Persuasive</option>
+        </select>
+      </div>
+      <button id="go">Generate Email</button>
+    </div>
 
     <h2>Result</h2>
     <div id="result" class="out">No result yet.</div>
@@ -39,6 +54,7 @@
       go.onclick = async () => {
         const job = $('job').value.trim();
         const skills = $('skills').value.trim();
+        const tone = $('tone').value.trim();
         if (!job || !skills) { alert('Please fill both fields.'); return; }
 
         $('result').textContent = 'Generating...';
@@ -47,7 +63,7 @@
           const res = await fetch('/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ job, skills })
+            body: JSON.stringify({ job, skills, tone })
           });
 
           const data = await res.json();
@@ -58,7 +74,7 @@
             return;
           }
 
-          const subject = data.subject || data.raw || '(no subject)';
+          const subject = data.subject || '(no subject)';
           const body = data.body || data.raw || '';
           $('result').innerHTML = `<strong>Subject:</strong> ${subject}<br><br>${body}`;
         } catch (e) {
