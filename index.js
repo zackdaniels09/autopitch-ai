@@ -1,28 +1,35 @@
-// index.js
+// index.js (final)
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const path = require('path');
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000; // Render provides PORT
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'; // safe default
 
 app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, 'public'))); // serve /public
 
-app.get('/', (req, res) => {
-  res.send('AutoPitch AI is live.');
+// Root serves the frontend UI
+app.get('/', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.post('/generate', async (req, res) => {
-  const { job, skills } = req.body;
+  const { job, skills } = req.body || {};
 
+  if (!OPENAI_API_KEY) {
+    return res.status(500).json({ error: 'Server missing OPENAI_API_KEY' });
+  }
   if (!job || !skills) {
     return res.status(400).json({ error: 'Missing job or skills in request body.' });
   }
 
-  try {
-    const prompt = `Write a cold outreach email based on the following:
+  const prompt = `Write a cold outreach email based on the following:
+
 Job description: ${job}
 Freelancer skills: ${skills}
 
@@ -34,43 +41,47 @@ Include:
 
 Return only the email content in JSON with keys: subject, body.`;
 
+  try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4',
+        model: OPENAI_MODEL,
         messages: [
           { role: 'system', content: 'You are a helpful assistant that writes professional cold emails.' },
-          { role: 'user', content: prompt }
+          { role: 'user', content: prompt },
         ],
-        temperature: 0.7
-      })
+        temperature: 0.7,
+      }),
     });
 
-    const data = await response.json();
+    if (!response.ok) {
+      const text = await response.text();
+      let body;
+      try { body = JSON.parse(text); } catch { body = { raw: text }; }
+      return res.status(502).json({ error: 'OpenAI API error', status: response.status, body });
+    }
 
+    const data = await response.json();
     if (!data.choices || !data.choices[0]) {
-      console.error('OpenAI API Error:', data);
       return res.status(500).json({ error: 'Invalid response from OpenAI', raw: data });
     }
 
-    const emailContent = data.choices[0].message.content;
-
+    const emailContent = data.choices[0].message.content || '';
     try {
       const parsed = JSON.parse(emailContent);
-      res.json(parsed);
-    } catch (e) {
-      res.json({ raw: emailContent });
+      return res.json(parsed);
+    } catch {
+      return res.json({ raw: emailContent });
     }
-
   } catch (error) {
-    res.status(500).json({ error: 'Error generating email', details: error.message });
+    return res.status(500).json({ error: 'Error generating email', details: error.message });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server is running on port ${PORT}`);
 });
