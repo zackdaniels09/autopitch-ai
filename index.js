@@ -1,4 +1,4 @@
-// index.js (tone-enabled)
+// index.js (tone + CTA + robust JSON)
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -8,9 +8,14 @@ const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fet
 const app = express();
 const PORT = process.env.PORT || 3000; // Render provides PORT
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'; // safe default
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'; // cheaper default
 
-// Helps if model returns ```json fenced blocks.
+// Normalize simple text inputs
+function cleanStr(v, fallback = '') {
+  return (typeof v === 'string' ? v : fallback).toString().trim();
+}
+
+// Handle ```json fenced blocks from the model
 function extractJson(text) {
   if (!text || typeof text !== 'string') return null;
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
@@ -18,7 +23,7 @@ function extractJson(text) {
   const start = candidate.indexOf('{');
   const end = candidate.lastIndexOf('}');
   if (start !== -1 && end !== -1 && end > start) {
-    try { return JSON.parse(candidate.slice(start, end + 1)); } catch { /* ignore */ }
+    try { return JSON.parse(candidate.slice(start, end + 1)); } catch {}
   }
   return null;
 }
@@ -31,21 +36,20 @@ app.get('/', (_req, res) => {
 });
 
 app.post('/generate', async (req, res) => {
-  const { job, skills, tone } = req.body || {};
+  const { job, skills, tone, ctaStyle } = req.body || {};
 
-  if (!OPENAI_API_KEY) {
-    return res.status(500).json({ error: 'Server missing OPENAI_API_KEY' });
-  }
-  if (!job || !skills) {
-    return res.status(400).json({ error: 'Missing job or skills in request body.' });
-  }
+  if (!OPENAI_API_KEY) return res.status(500).json({ error: 'Server missing OPENAI_API_KEY' });
+  if (!job || !skills) return res.status(400).json({ error: 'Missing job or skills in request body.' });
 
-  const selectedTone = (tone || 'Friendly').trim();
+  const selectedTone = cleanStr(tone, 'Friendly');
+  const selectedCTA = cleanStr(ctaStyle, 'Book a quick call');
 
   const prompt = `Write a cold outreach email in a ${selectedTone} tone based on the following:
 
 Job description: ${job}
 Freelancer skills: ${skills}
+
+Write for a single recipient. Include ONE clear call to action using this style: "${selectedCTA}" (adapt wording to match the tone). Keep it concise and skimmable.
 
 Include exactly these keys in a single JSON object:
 - subject (string)
@@ -84,9 +88,8 @@ Return ONLY raw JSON. No code fences, no markdown, no backticks, no extra text.`
 
     const emailContent = data.choices[0].message.content || '';
     const parsed = extractJson(emailContent);
-    if (parsed && parsed.subject && parsed.body) {
-      return res.json(parsed);
-    }
+    if (parsed && parsed.subject && parsed.body) return res.json(parsed);
+
     try {
       const p2 = JSON.parse(emailContent);
       if (p2 && p2.subject && p2.body) return res.json(p2);

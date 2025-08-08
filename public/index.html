@@ -11,14 +11,16 @@
       .row { margin: 12px 0; }
       .out { white-space: pre-wrap; border: 1px solid #ddd; padding: 12px; border-radius: 8px; background: #fff; }
       .muted { color:#666; font-size: 14px; }
-      .inline { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
+      .inline-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: end; }
+      .controls { display:flex; gap:8px; margin: 8px 0 0; }
+      .controls button { flex: 1; }
       button { padding: 10px; }
       label { font-weight: 600; display:block; margin-bottom: 6px; }
     </style>
   </head>
   <body>
     <h1>AutoPitch AI</h1>
-    <p class="muted">Paste a job description and your skills. Choose a tone. Click Generate.</p>
+    <p class="muted">Paste a job description and your skills. Choose tone + CTA. Click Generate.</p>
 
     <div class="row">
       <label>Job description</label>
@@ -30,7 +32,7 @@
       <textarea id="skills" placeholder="Describe your services and strengths..."></textarea>
     </div>
 
-    <div class="row inline">
+    <div class="row inline-3">
       <div>
         <label for="tone">Tone</label>
         <select id="tone">
@@ -41,45 +43,91 @@
           <option>Persuasive</option>
         </select>
       </div>
+
+      <div>
+        <label for="cta">CTA style</label>
+        <select id="cta">
+          <option>Book a quick call</option>
+          <option>Reply with details</option>
+          <option>Get a free audit</option>
+          <option>Schedule a demo</option>
+          <option>Start with a trial</option>
+        </select>
+      </div>
+
       <button id="go">Generate Email</button>
     </div>
 
     <h2>Result</h2>
     <div id="result" class="out">No result yet.</div>
+    <div class="controls" id="actions" style="display:none">
+      <button id="copyBtn">Copy to clipboard</button>
+      <button id="dlBtn">Download .txt</button>
+    </div>
 
     <script>
-      const go = document.getElementById('go');
       const $ = (id) => document.getElementById(id);
+      const go = $('go'), result = $('result'), actions = $('actions');
+      const copyBtn = $('copyBtn'), dlBtn = $('dlBtn');
+
+      let lastSubject = '', lastBody = '';
 
       go.onclick = async () => {
         const job = $('job').value.trim();
         const skills = $('skills').value.trim();
         const tone = $('tone').value.trim();
+        const ctaStyle = $('cta').value.trim();
         if (!job || !skills) { alert('Please fill both fields.'); return; }
 
-        $('result').textContent = 'Generating...';
+        result.textContent = 'Generating...';
+        actions.style.display = 'none';
 
         try {
           const res = await fetch('/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ job, skills, tone })
+            body: JSON.stringify({ job, skills, tone, ctaStyle })
           });
 
           const data = await res.json();
 
           if (!res.ok) {
-            $('result').textContent = 'Error: ' + (data?.error || res.status);
+            result.textContent = 'Error: ' + (data?.error || res.status);
             console.error('Server error:', data);
             return;
           }
 
-          const subject = data.subject || '(no subject)';
-          const body = data.body || data.raw || '';
-          $('result').innerHTML = `<strong>Subject:</strong> ${subject}<br><br>${body}`;
+          lastSubject = data.subject || '(no subject)';
+          lastBody = data.body || data.raw || '';
+
+          result.innerHTML = `<strong>Subject:</strong> ${lastSubject}<br><br>${lastBody}`;
+          actions.style.display = 'flex';
         } catch (e) {
-          $('result').textContent = 'Network error: ' + e.message;
+          result.textContent = 'Network error: ' + e.message;
         }
+      };
+
+      copyBtn.onclick = async () => {
+        const text = `Subject: ${lastSubject}\n\n${lastBody}`;
+        try {
+          await navigator.clipboard.writeText(text);
+          copyBtn.textContent = 'Copied!';
+          setTimeout(() => copyBtn.textContent = 'Copy to clipboard', 1200);
+        } catch {
+          alert('Copy failed. Select and copy manually.');
+        }
+      };
+
+      dlBtn.onclick = () => {
+        const blob = new Blob([`Subject: ${lastSubject}\n\n${lastBody}`], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = (lastSubject || 'email').replace(/[\\/:*?"<>|]+/g, '_') + '.txt';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
       };
     </script>
   </body>
