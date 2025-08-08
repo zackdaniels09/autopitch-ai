@@ -10,6 +10,20 @@ const PORT = process.env.PORT || 3000; // Render provides PORT
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'; // safe default
 
+// Helper: extract JSON when the model wraps it in code fences/backticks
+function extractJson(text) {
+  if (!text || typeof text !== 'string') return null;
+  // Try fenced block first: ```json ... ``` or ``` ... ```
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const candidate = fence ? fence[1] : text;
+  const start = candidate.indexOf('{');
+  const end = candidate.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) {
+    try { return JSON.parse(candidate.slice(start, end + 1)); } catch { /* ignore */ }
+  }
+  return null;
+}
+
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public'))); // serve /public
 
@@ -33,13 +47,11 @@ app.post('/generate', async (req, res) => {
 Job description: ${job}
 Freelancer skills: ${skills}
 
-Include:
-- A subject line
-- A warm but confident introduction
-- A value proposition
-- A call to action
+Include exactly these keys in a single JSON object:
+- subject (string)
+- body (string)
 
-Return only the email content in JSON with keys: subject, body.`;
+Return ONLY raw JSON. No code fences, no markdown, no backticks, no extra text.`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -71,12 +83,15 @@ Return only the email content in JSON with keys: subject, body.`;
     }
 
     const emailContent = data.choices[0].message.content || '';
-    try {
-      const parsed = JSON.parse(emailContent);
+    const parsed = extractJson(emailContent);
+    if (parsed && parsed.subject && parsed.body) {
       return res.json(parsed);
-    } catch {
-      return res.json({ raw: emailContent });
     }
+    try {
+      const p2 = JSON.parse(emailContent);
+      if (p2 && p2.subject && p2.body) return res.json(p2);
+    } catch {}
+    return res.json({ raw: emailContent });
   } catch (error) {
     return res.status(500).json({ error: 'Error generating email', details: error.message });
   }
