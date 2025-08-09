@@ -1,4 +1,4 @@
-// index.js (tone + CTA + robust JSON)
+// index.js (full: tone + CTA + variants + rate limit + robust parsing + static UI)
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -6,16 +6,20 @@ const path = require('path');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
-const PORT = process.env.PORT || 3000; // Render provides PORT
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'; // cheaper default
 
-// Normalize simple text inputs
+// --- Config ---
+const PORT = process.env.PORT || 3000;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'; // cheap + widely available
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '10', 10);       // requests
+const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10); // per ms window
+
+// --- Utils ---
 function cleanStr(v, fallback = '') {
   return (typeof v === 'string' ? v : fallback).toString().trim();
 }
 
-// Handle ```json fenced blocks from the model
+// Extract JSON if model wraps in ```json fences; otherwise try to parse raw.
 function extractJson(text) {
   if (!text || typeof text !== 'string') return null;
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
@@ -25,37 +29,58 @@ function extractJson(text) {
   if (start !== -1 && end !== -1 && end > start) {
     try { return JSON.parse(candidate.slice(start, end + 1)); } catch {}
   }
+  try { return JSON.parse(candidate); } catch {}
   return null;
 }
 
+// --- Basic in-memory rate limiter per IP ---
+const buckets = new Map(); // ip -> array of timestamps
+function rateLimit(req, res, next) {
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const windowStart = now - RATE_LIMIT_WINDOW_MS;
+  const arr = buckets.get(ip) || [];
+  const fresh = arr.filter(t => t >= windowStart);
+  if (fresh.length >= RATE_LIMIT_MAX) {
+    const retryInMs = fresh[0] + RATE_LIMIT_WINDOW_MS - now;
+    return res.status(429).json({ error: 'Too many requests', retry_in_ms: Math.max(retryInMs, 0) });
+  }
+  fresh.push(now);
+  buckets.set(ip, fresh);
+  next();
+}
+
+// --- Middleware ---
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// --- Routes ---
 app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.post('/generate', async (req, res) => {
-  const { job, skills, tone, ctaStyle } = req.body || {};
+app.get('/health', (_req, res) => {
+  res.json({ ok: true, model: OPENAI_MODEL, rate_limit: { max: RATE_LIMIT_MAX, window_ms: RATE_LIMIT_WINDOW_MS } });
+});
+
+app.post('/generate', rateLimit, async (req, res) => {
+  const { job, skills, tone, ctaStyle, variants } = req.body || {};
 
   if (!OPENAI_API_KEY) return res.status(500).json({ error: 'Server missing OPENAI_API_KEY' });
-  if (!job || !skills) return res.status(400).json({ error: 'Missing job or skills in request body.' });
+  if (!job || !skills)   return res.status(400).json({ error: 'Missing job or skills in request body.' });
 
   const selectedTone = cleanStr(tone, 'Friendly');
-  const selectedCTA = cleanStr(ctaStyle, 'Book a quick call');
+  const selectedCTA  = cleanStr(ctaStyle, 'Book a quick call');
+  const count        = Math.max(1, Math.min(5, parseInt(variants, 10) || 1));
 
-  const prompt = `Write a cold outreach email in a ${selectedTone} tone based on the following:
+  const prompt = `Create ${count} cold outreach emails in a ${selectedTone} tone based on the following. Each email must be concise, skimmable, and include ONE clear call to action in the style: "${selectedCTA}" (rephrase to match the tone).
 
 Job description: ${job}
 Freelancer skills: ${skills}
 
-Write for a single recipient. Include ONE clear call to action using this style: "${selectedCTA}" (adapt wording to match the tone). Keep it concise and skimmable.
-
-Include exactly these keys in a single JSON object:
-- subject (string)
-- body (string)
-
-Return ONLY raw JSON. No code fences, no markdown, no backticks, no extra text.`;
+Return ONLY JSON in this exact shape:
+{ "emails": [ { "subject": string, "body": string }, ... ] }
+The length of "emails" MUST be exactly ${count}. No markdown, no code fences, no backticks, no extra prose.`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -67,7 +92,7 @@ Return ONLY raw JSON. No code fences, no markdown, no backticks, no extra text.`
       body: JSON.stringify({
         model: OPENAI_MODEL,
         messages: [
-          { role: 'system', content: 'You are a helpful assistant that writes professional cold emails.' },
+          { role: 'system', content: 'You write professional, conversion-focused cold outreach emails.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.7,
@@ -82,24 +107,31 @@ Return ONLY raw JSON. No code fences, no markdown, no backticks, no extra text.`
     }
 
     const data = await response.json();
-    if (!data.choices || !data.choices[0]) {
-      return res.status(500).json({ error: 'Invalid response from OpenAI', raw: data });
+    const content = data?.choices?.[0]?.message?.content || '';
+
+    let emails = [];
+    const parsed = extractJson(content);
+    if (parsed && Array.isArray(parsed.emails)) {
+      emails = parsed.emails.filter(e => e && typeof e.subject === 'string' && typeof e.body === 'string');
+    } else {
+      try {
+        const single = JSON.parse(content);
+        if (single && single.subject && single.body) emails = [single];
+      } catch {}
     }
 
-    const emailContent = data.choices[0].message.content || '';
-    const parsed = extractJson(emailContent);
-    if (parsed && parsed.subject && parsed.body) return res.json(parsed);
+    if (!emails.length) {
+      return res.json({ emails: [{ subject: 'Draft', body: content }] });
+    }
 
-    try {
-      const p2 = JSON.parse(emailContent);
-      if (p2 && p2.subject && p2.body) return res.json(p2);
-    } catch {}
-    return res.json({ raw: emailContent });
+    emails = emails.slice(0, count);
+    return res.json({ emails });
   } catch (error) {
     return res.status(500).json({ error: 'Error generating email', details: error.message });
   }
 });
 
+// --- Start ---
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on port ${PORT}`);
 });

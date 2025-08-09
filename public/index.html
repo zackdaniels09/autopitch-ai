@@ -5,130 +5,189 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>AutoPitch AI</title>
     <style>
-      body { font-family: system-ui, Arial, sans-serif; max-width: 800px; margin: 32px auto; padding: 0 16px; }
-      textarea, input, button, select { width: 100%; font-size: 16px; }
+      :root { --bg:#0b0f19; --card:#121725; --text:#eef1f6; --muted:#9aa4b2; --brand:#6aa6ff; }
+      * { box-sizing: border-box; }
+      body { background: var(--bg); color: var(--text); font-family: system-ui, Arial, sans-serif; }
+      .wrap { max-width: 960px; margin: 32px auto; padding: 0 16px; }
+      header { display:flex; align-items:center; justify-content:space-between; margin: 12px 0 24px; }
+      .logo { display:flex; align-items:center; gap:10px; font-weight:700; }
+      .logo .dot { width:12px; height:12px; border-radius:50%; background: var(--brand); display:inline-block; }
+      .card { background: var(--card); border: 1px solid #222940; border-radius: 14px; padding: 16px; }
+      textarea, select, button { width: 100%; font-size: 16px; color: var(--text); }
+      textarea, select { background: #0e1322; border:1px solid #2a334b; border-radius: 10px; padding: 10px; }
       textarea { height: 140px; }
+      label { display:block; margin: 8px 0 6px; font-weight:600; }
       .row { margin: 12px 0; }
-      .out { white-space: pre-wrap; border: 1px solid #ddd; padding: 12px; border-radius: 8px; background: #fff; }
-      .muted { color:#666; font-size: 14px; }
-      .inline-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: end; }
-      .controls { display:flex; gap:8px; margin: 8px 0 0; }
-      .controls button { flex: 1; }
-      button { padding: 10px; }
-      label { font-weight: 600; display:block; margin-bottom: 6px; }
+      .grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+      .btn { background: var(--brand); border: none; border-radius: 10px; padding: 12px; font-weight:700; cursor:pointer; }
+      .btn:disabled { filter: grayscale(0.6); opacity: 0.7; cursor:not-allowed; }
+      .muted { color: var(--muted); font-size: 14px; }
+      .results { display:grid; gap: 12px; margin-top: 16px; }
+      .email { background: #0e1322; border:1px solid #2a334b; border-radius: 12px; padding: 12px; }
+      .email h3 { margin:0 0 8px; font-size: 16px; }
+      .actions { display:flex; gap:8px; margin-top:8px; }
+      .actions button { flex:1; }
+      .toolbar { display:flex; gap:8px; margin-top:12px; }
+      .toolbar button { flex: 1; }
     </style>
   </head>
   <body>
-    <h1>AutoPitch AI</h1>
-    <p class="muted">Paste a job description and your skills. Choose tone + CTA. Click Generate.</p>
+    <div class="wrap">
+      <header>
+        <div class="logo"><span class="dot"></span> AutoPitch AI</div>
+      </header>
 
-    <div class="row">
-      <label>Job description</label>
-      <textarea id="job" placeholder="Paste the client post or job details here..."></textarea>
-    </div>
+      <div class="card">
+        <p class="muted">Paste the job, your skills, choose tone + CTA, and how many variants to generate.</p>
 
-    <div class="row">
-      <label>Your skills/services</label>
-      <textarea id="skills" placeholder="Describe your services and strengths..."></textarea>
-    </div>
+        <div class="row">
+          <label>Job description</label>
+          <textarea id="job" placeholder="Paste the client post or job details here..."></textarea>
+        </div>
 
-    <div class="row inline-3">
-      <div>
-        <label for="tone">Tone</label>
-        <select id="tone">
-          <option>Friendly</option>
-          <option>Formal</option>
-          <option>Bold & Direct</option>
-          <option>Conversational</option>
-          <option>Persuasive</option>
-        </select>
+        <div class="row">
+          <label>Your skills/services</label>
+          <textarea id="skills" placeholder="Describe your services and strengths..."></textarea>
+        </div>
+
+        <div class="row grid">
+          <div>
+            <label for="tone">Tone</label>
+            <select id="tone">
+              <option>Friendly</option>
+              <option>Formal</option>
+              <option>Bold & Direct</option>
+              <option>Conversational</option>
+              <option>Persuasive</option>
+            </select>
+          </div>
+          <div>
+            <label for="cta">CTA style</label>
+            <select id="cta">
+              <option>Book a quick call</option>
+              <option>Reply with details</option>
+              <option>Get a free audit</option>
+              <option>Schedule a demo</option>
+              <option>Start with a trial</option>
+            </select>
+          </div>
+          <div>
+            <label for="variants">Variants</label>
+            <select id="variants">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row">
+          <button class="btn" id="go">Generate Emails</button>
+        </div>
+
+        <div id="status" class="muted"></div>
+
+        <div class="toolbar" id="toolbar" style="display:none">
+          <button class="btn" id="copyAll">Copy all</button>
+          <button class="btn" id="downloadCsv">Download CSV</button>
+        </div>
+
+        <div class="results" id="results"></div>
       </div>
-
-      <div>
-        <label for="cta">CTA style</label>
-        <select id="cta">
-          <option>Book a quick call</option>
-          <option>Reply with details</option>
-          <option>Get a free audit</option>
-          <option>Schedule a demo</option>
-          <option>Start with a trial</option>
-        </select>
-      </div>
-
-      <button id="go">Generate Email</button>
-    </div>
-
-    <h2>Result</h2>
-    <div id="result" class="out">No result yet.</div>
-    <div class="controls" id="actions" style="display:none">
-      <button id="copyBtn">Copy to clipboard</button>
-      <button id="dlBtn">Download .txt</button>
     </div>
 
     <script>
       const $ = (id) => document.getElementById(id);
-      const go = $('go'), result = $('result'), actions = $('actions');
-      const copyBtn = $('copyBtn'), dlBtn = $('dlBtn');
+      const go = $('go'), results = $('results'), statusEl = $('status');
+      const toolbar = $('toolbar'), copyAllBtn = $('copyAll'), downloadCsvBtn = $('downloadCsv');
 
-      let lastSubject = '', lastBody = '';
+      let lastEmails = [];
 
-      go.onclick = async () => {
+      function emailText(e) { return `Subject: ${e.subject}\n\n${e.body}`; }
+
+      function copyToClipboard(text, btn) {
+        navigator.clipboard.writeText(text).then(() => {
+          const old = btn.textContent; btn.textContent = 'Copied!';
+          setTimeout(() => btn.textContent = old, 1200);
+        }).catch(() => alert('Copy failed'));
+      }
+
+      function toCsv(rows) {
+        const esc = (s='') => `"${String(s).replace(/"/g,'""')}"`;
+        const header = ['subject','body'];
+        const lines = [header.map(esc).join(',')];
+        rows.forEach(r => lines.push([esc(r.subject), esc(r.body)].join(',')));
+        return lines.join('\r\n');
+      }
+
+      copyAllBtn.onclick = () => {
+        const text = lastEmails.map(emailText).join('\n\n---\n\n');
+        copyToClipboard(text, copyAllBtn);
+      };
+
+      downloadCsvBtn.onclick = () => {
+        const csv = toCsv(lastEmails);
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'autopitch_emails.csv'; a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      go.addEventListener('click', async () => {
         const job = $('job').value.trim();
         const skills = $('skills').value.trim();
         const tone = $('tone').value.trim();
         const ctaStyle = $('cta').value.trim();
+        const variants = parseInt($('variants').value, 10) || 1;
         if (!job || !skills) { alert('Please fill both fields.'); return; }
 
-        result.textContent = 'Generating...';
-        actions.style.display = 'none';
+        statusEl.textContent = 'Generating...';
+        results.innerHTML = '';
+        toolbar.style.display = 'none';
+        go.disabled = true;
+        lastEmails = [];
 
         try {
           const res = await fetch('/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ job, skills, tone, ctaStyle })
+            body: JSON.stringify({ job, skills, tone, ctaStyle, variants })
           });
-
           const data = await res.json();
+          if (!res.ok) { statusEl.textContent = 'Error: ' + (data?.error || res.status); console.error(data); return; }
 
-          if (!res.ok) {
-            result.textContent = 'Error: ' + (data?.error || res.status);
-            console.error('Server error:', data);
-            return;
-          }
+          const emails = Array.isArray(data.emails) ? data.emails : [];
+          if (!emails.length) { statusEl.textContent = 'No emails returned. Try again.'; return; }
 
-          lastSubject = data.subject || '(no subject)';
-          lastBody = data.body || data.raw || '';
+          lastEmails = emails;
+          statusEl.textContent = `Generated ${emails.length} variant(s).`;
+          toolbar.style.display = 'flex';
 
-          result.innerHTML = `<strong>Subject:</strong> ${lastSubject}<br><br>${lastBody}`;
-          actions.style.display = 'flex';
-        } catch (e) {
-          result.textContent = 'Network error: ' + e.message;
+          emails.forEach((e, i) => {
+            const card = document.createElement('div');
+            card.className = 'email';
+            card.innerHTML = `<h3>Variant ${i+1}: ${e.subject || '(no subject)'}</h3><div>${(e.body || '').replace(/\n/g, '<br>')}</div>`;
+            const actions = document.createElement('div'); actions.className = 'actions';
+            const copyBtn = document.createElement('button'); copyBtn.className = 'btn'; copyBtn.textContent = 'Copy';
+            copyBtn.onclick = () => copyToClipboard(emailText(e), copyBtn);
+            const dlBtn = document.createElement('button'); dlBtn.className = 'btn'; dlBtn.textContent = 'Download .txt';
+            dlBtn.onclick = () => {
+              const safe = (e.subject||'email').replace(/[\\/:*?"<>|]+/g,'_');
+              const blob = new Blob([emailText(e)], { type: 'text/plain' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a'); a.href = url; a.download = `${safe}.txt`; a.click();
+              URL.revokeObjectURL(url);
+            };
+            actions.appendChild(copyBtn); actions.appendChild(dlBtn);
+            card.appendChild(actions);
+            results.appendChild(card);
+          });
+        } catch (err) {
+          statusEl.textContent = 'Network error: ' + err.message;
+        } finally {
+          go.disabled = false;
         }
-      };
-
-      copyBtn.onclick = async () => {
-        const text = `Subject: ${lastSubject}\n\n${lastBody}`;
-        try {
-          await navigator.clipboard.writeText(text);
-          copyBtn.textContent = 'Copied!';
-          setTimeout(() => copyBtn.textContent = 'Copy to clipboard', 1200);
-        } catch {
-          alert('Copy failed. Select and copy manually.');
-        }
-      };
-
-      dlBtn.onclick = () => {
-        const blob = new Blob([`Subject: ${lastSubject}\n\n${lastBody}`], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = (lastSubject || 'email').replace(/[\\/:*?"<>|]+/g, '_') + '.txt';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      };
+      });
     </script>
   </body>
 </html>
