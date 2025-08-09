@@ -1,4 +1,4 @@
-// index.js (full: tone + CTA + variants + rate limit + robust parsing + static UI)
+// Full backend: model env, tone/CTA/variants, rate limit, robust parsing, static UI, optional Stripe
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -7,19 +7,33 @@ const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fet
 
 const app = express();
 
-// --- Config ---
+// -------- Config --------
 const PORT = process.env.PORT || 3000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'; // cheap + widely available
-const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '10', 10);       // requests
-const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10); // per ms window
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '10', 10);
+const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10);
 
-// --- Utils ---
+// Optional Stripe (won’t crash if not installed/configured)
+let stripe = null;
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
+const PRICE_ID = process.env.PRICE_ID || '';
+const PUBLIC_URL = process.env.PUBLIC_URL || '';
+try {
+  if (STRIPE_SECRET_KEY) {
+    // eslint-disable-next-line global-require
+    const Stripe = require('stripe');
+    stripe = Stripe(STRIPE_SECRET_KEY);
+  }
+} catch {
+  stripe = null; // not installed; ignore
+}
+
+// -------- Utilities --------
 function cleanStr(v, fallback = '') {
   return (typeof v === 'string' ? v : fallback).toString().trim();
 }
 
-// Extract JSON if model wraps in ```json fences; otherwise try to parse raw.
 function extractJson(text) {
   if (!text || typeof text !== 'string') return null;
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
@@ -33,8 +47,8 @@ function extractJson(text) {
   return null;
 }
 
-// --- Basic in-memory rate limiter per IP ---
-const buckets = new Map(); // ip -> array of timestamps
+// -------- Simple in-memory rate limiter --------
+const buckets = new Map(); // ip -> timestamps
 function rateLimit(req, res, next) {
   const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
@@ -50,17 +64,22 @@ function rateLimit(req, res, next) {
   next();
 }
 
-// --- Middleware ---
+// -------- Middleware --------
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- Routes ---
+// -------- Routes --------
 app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, model: OPENAI_MODEL, rate_limit: { max: RATE_LIMIT_MAX, window_ms: RATE_LIMIT_WINDOW_MS } });
+  res.json({
+    ok: true,
+    model: OPENAI_MODEL,
+    rate_limit: { max: RATE_LIMIT_MAX, window_ms: RATE_LIMIT_WINDOW_MS },
+    checkout_enabled: Boolean(stripe && PRICE_ID && PUBLIC_URL),
+  });
 });
 
 app.post('/generate', rateLimit, async (req, res) => {
@@ -73,14 +92,14 @@ app.post('/generate', rateLimit, async (req, res) => {
   const selectedCTA  = cleanStr(ctaStyle, 'Book a quick call');
   const count        = Math.max(1, Math.min(5, parseInt(variants, 10) || 1));
 
-  const prompt = `Create ${count} cold outreach emails in a ${selectedTone} tone based on the following. Each email must be concise, skimmable, and include ONE clear call to action in the style: "${selectedCTA}" (rephrase to match the tone).
+  const prompt = `Create ${count} cold outreach emails in a ${selectedTone} tone. Each must be concise, skimmable, and include ONE clear call to action in the style: "${selectedCTA}" (rephrase to match tone).
 
 Job description: ${job}
 Freelancer skills: ${skills}
 
-Return ONLY JSON in this exact shape:
+Return ONLY JSON like:
 { "emails": [ { "subject": string, "body": string }, ... ] }
-The length of "emails" MUST be exactly ${count}. No markdown, no code fences, no backticks, no extra prose.`;
+The "emails" array length MUST be exactly ${count}. No markdown, code fences, or prose—JSON only.`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -120,18 +139,32 @@ The length of "emails" MUST be exactly ${count}. No markdown, no code fences, no
       } catch {}
     }
 
-    if (!emails.length) {
-      return res.json({ emails: [{ subject: 'Draft', body: content }] });
-    }
+    if (!emails.length) return res.json({ emails: [{ subject: 'Draft', body: content }] });
 
-    emails = emails.slice(0, count);
-    return res.json({ emails });
+    return res.json({ emails: emails.slice(0, count) });
   } catch (error) {
     return res.status(500).json({ error: 'Error generating email', details: error.message });
   }
 });
 
-// --- Start ---
+// Optional Stripe checkout (safe if not configured)
+app.post('/checkout', async (_req, res) => {
+  try {
+    if (!stripe || !PRICE_ID || !PUBLIC_URL) {
+      return res.status(501).json({ error: 'Checkout not configured on server.' });
+    }
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription', // use 'payment' for one-time
+      line_items: [{ price: PRICE_ID, quantity: 1 }],
+      success_url: `${PUBLIC_URL}/?success=1`,
+      cancel_url: `${PUBLIC_URL}/?cancel=1`,
+    });
+    return res.json({ url: session.url });
+  } catch (e) {
+    return res.status(500).json({ error: 'Stripe error', details: e.message });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on port ${PORT}`);
 });
