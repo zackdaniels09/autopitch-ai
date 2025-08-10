@@ -37,6 +37,7 @@
       .tmpl .small { color: var(--muted); font-size: 12px; }
       .tmpl .rowbtn { display:flex; gap:8px; margin-top:8px; }
       .paywall { background:#0e1322; border:1px dashed #2a334b; border-radius:10px; padding:12px; margin-top:12px; }
+      .plans { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
     </style>
   </head>
   <body>
@@ -96,7 +97,6 @@
           </div>
 
           <div id="status" class="muted"></div>
-
           <div class="toolbar" id="toolbar" style="display:none">
             <button class="btn" id="copyAll">Copy all</button>
             <button class="btn" id="downloadCsv">Download CSV</button>
@@ -116,10 +116,10 @@
 
           <div class="paywall" id="paywall" style="display:none">
             <strong>Upgrade for unlimited pitches</strong>
-            <p class="muted">You hit the free limit. Unlock unlimited generations and faster models.</p>
-            <div class="row" style="display:flex; gap:8px">
-              <button class="btn" id="joinWaitlist">Join waitlist</button>
-              <button class="btn" id="buyNow">Buy now</button>
+            <p class="muted">Choose a plan to unlock unlimited generations and faster models.</p>
+            <div class="plans">
+              <button class="btn" id="buyStd">Standard – $19/mo</button>
+              <button class="btn" id="buyPro">Premium – $39/mo</button>
             </div>
           </div>
         </aside>
@@ -131,7 +131,7 @@
       const go = $('go'), results = $('results'), statusEl = $('status'), limitsEl = $('limits');
       const toolbar = $('toolbar'), copyAllBtn = $('copyAll'), downloadCsvBtn = $('downloadCsv');
       const tmplList = $('templates'), exportAllBtn = $('exportAll'), clearAllBtn = $('clearAll');
-      const paywall = $('paywall'), buyNowBtn = $('buyNow'), waitlistBtn = $('joinWaitlist');
+      const paywall = $('paywall'), buyStdBtn = $('buyStd'), buyProBtn = $('buyPro');
 
       const FREE_MODE_MAX = 10; // client soft cap
       let freeCount = parseInt(localStorage.getItem('ap_free_count')||'0',10);
@@ -172,7 +172,12 @@
           const dlBtn = document.createElement('button'); dlBtn.className='btn'; dlBtn.textContent='Download .txt';
           dlBtn.onclick = () => download((t.subject||'email').replace(/[\\\/:*?"<>|]+/g,'_') + '.txt', 'text/plain', emailText(t));
           const delBtn = document.createElement('button'); delBtn.className='btn warn'; delBtn.textContent='Delete';
-          delBtn.onclick = () => { const arr2 = JSON.parse(localStorage.getItem('ap_templates')||'[]'); arr2.splice(i,1); localStorage.setItem('ap_templates', JSON.stringify(arr2)); loadTemplates(); };
+          delBtn.onclick = () => {
+            const arr2 = JSON.parse(localStorage.getItem('ap_templates')||'[]');
+            arr2.splice(i,1);
+            localStorage.setItem('ap_templates', JSON.stringify(arr2));
+            loadTemplates();
+          };
           rowbtn.appendChild(copyBtn); rowbtn.appendChild(dlBtn); rowbtn.appendChild(delBtn);
           div.appendChild(rowbtn);
           tmplList.appendChild(div);
@@ -212,19 +217,21 @@
           if (j?.rate_limit) {
             limitsEl.textContent = `Rate limit: ${j.rate_limit.max}/${Math.round(j.rate_limit.window_ms/1000)}s` + (j.model ? ` (model: ${j.model})` : '');
           }
-          if (j?.checkout_enabled) paywall.dataset.enabled = '1';
+          if (j?.checkout_enabled) paywall.style.display = 'block';
         } catch {}
       }
 
-      async function startCheckout() {
+      async function startCheckout(plan) {
         try {
-          const r = await fetch('/checkout', { method: 'POST' });
+          const r = await fetch('/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json' },
+            body: JSON.stringify({ plan })
+          });
           const j = await r.json();
           if (j?.url) { window.location.href = j.url; return; }
           alert(j?.error || 'Checkout not available.');
-        } catch (e) {
-          alert('Checkout error: ' + e.message);
-        }
+        } catch (e) { alert('Checkout error: ' + e.message); }
       }
 
       async function generate() {
@@ -277,14 +284,12 @@
           });
         } catch (err) {
           statusEl.textContent = 'Network error: ' + err.message;
-        } finally {
-          go.disabled = false;
-        }
+        } finally { go.disabled = false; }
       }
 
       go.addEventListener('click', generate);
-      waitlistBtn.onclick = () => alert('Thanks! Waitlist link coming soon.');
-      buyNowBtn.onclick = () => startCheckout();
+      buyStdBtn.onclick = () => startCheckout('standard');
+      buyProBtn.onclick = () => startCheckout('premium');
 
       loadTemplates();
       refreshLimits();
