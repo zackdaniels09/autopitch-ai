@@ -1,4 +1,69 @@
-// index.js — complete server (drop-in replacement)
+<!-- =========================================
+File: C:\Users\zacka\autopitch-ai\public\success.html
+========================================= -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Payment Successful – AutoPitch AI</title>
+    <style>
+      :root { --bg:#0b0f19; --card:#121725; --text:#eef1f6; --muted:#9aa4b2; --brand:#6aa6ff; }
+      body { background: var(--bg); color: var(--text); font-family: system-ui, Arial, sans-serif; margin:0; display:grid; place-items:center; min-height:100vh; padding:16px; }
+      .box { background: var(--card); border: 1px solid #222940; border-radius: 14px; padding: 24px; max-width: 560px; text-align:center; }
+      .muted { color: var(--muted); }
+      a.btn { display:inline-block; margin-top:16px; padding:12px 16px; background:var(--brand); color:#0b0f19; text-decoration:none; border-radius:10px; font-weight:700; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>✅ Payment Successful</h1>
+      <p class="muted" id="plan">You're all set. Thanks for upgrading!</p>
+      <a href="/" class="btn">Back to AutoPitch</a>
+    </div>
+    <script>
+      const p = new URLSearchParams(location.search);
+      const plan = p.get('plan');
+      if (plan) document.getElementById('plan').textContent = `Your plan: ${plan}. You now have unlimited generations.`;
+    </script>
+  </body>
+</html>
+
+<!-- =========================================
+File: C:\Users\zacka\autopitch-ai\public\cancel.html
+========================================= -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Checkout Canceled – AutoPitch AI</title>
+    <style>
+      :root { --bg:#0b0f19; --card:#121725; --text:#eef1f6; --muted:#9aa4b2; --warn:#ffb86b; }
+      body { background: var(--bg); color: var(--text); font-family: system-ui, Arial, sans-serif; margin:0; display:grid; place-items:center; min-height:100vh; padding:16px; }
+      .box { background: var(--card); border: 1px solid #222940; border-radius: 14px; padding: 24px; max-width: 560px; text-align:center; }
+      .muted { color: var(--muted); }
+      a.btn { display:inline-block; margin-top:16px; padding:12px 16px; background:var(--warn); color:#1a1a1a; text-decoration:none; border-radius:10px; font-weight:700; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>⚠️ Checkout Canceled</h1>
+      <p class="muted">No charge was made. You can try again any time.</p>
+      <a href="/" class="btn">Back to AutoPitch</a>
+    </div>
+  </body>
+</html>
+
+<!-- =========================================
+File: C:\Users\zacka\autopitch-ai\index.js
+(Full server with success/cancel redirects already set)
+========================================= -->
+<script>
+// This <script> tag is only to syntax-highlight in chat. Remove it when pasting.
+</script>
+<!-- begin JS -->
+// index.js — complete server
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -36,7 +101,6 @@ function mask(v, keep = 6) {
   if (v.length <= keep + 4) return v;
   return v.slice(0, keep) + '…' + v.slice(-4);
 }
-
 function extractJson(text) {
   if (!text || typeof text !== 'string') return null;
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
@@ -50,7 +114,7 @@ function extractJson(text) {
   return null;
 }
 
-// Very simple in-memory rate limiter
+// Basic in-memory rate limiter
 const buckets = new Map();
 function rateLimit(req, res, next) {
   const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
@@ -71,7 +135,7 @@ function rateLimit(req, res, next) {
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ---- Health & Stripe debug (safe) ----
+// ---- Health & Stripe debug ----
 app.get('/health', (_req, res) => {
   const haveStripe = Boolean(stripe);
   const haveSecret = Boolean(STRIPE_SECRET_KEY);
@@ -132,7 +196,12 @@ app.post('/generate', rateLimit, async (req, res) => {
   const cta = (typeof ctaStyle === 'string' && ctaStyle.trim()) || 'Book a quick call';
   const count = Math.max(1, Math.min(5, parseInt(variants, 10) || 1));
 
-  const prompt = `Create ${count} cold outreach emails in a ${t} tone. Each must include a clear CTA like "${cta}" (rephrase to match tone).\n\nJob description: ${job}\nFreelancer skills: ${skills}\n\nReturn ONLY JSON like: { "emails": [ { "subject": string, "body": string } ] } with exactly ${count} items.`;
+  const prompt = `Create ${count} cold outreach emails in a ${t} tone. Each must include a clear CTA like "${cta}" (rephrase to match tone).
+
+Job description: ${job}
+Freelancer skills: ${skills}
+
+Return ONLY JSON like: { "emails": [ { "subject": string, "body": string } ] } with exactly ${count} items.`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -182,8 +251,8 @@ app.post('/checkout', async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${PUBLIC_URL}/?success=1&plan=${encodeURIComponent(plan)}`,
-      cancel_url: `${PUBLIC_URL}/?cancel=1`
+      success_url: `${PUBLIC_URL}/success.html?plan=${encodeURIComponent(plan)}`,
+      cancel_url: `${PUBLIC_URL}/cancel.html`
     });
 
     return res.json({ url: session.url });
@@ -196,3 +265,4 @@ app.post('/checkout', async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
+<!-- end JS -->
