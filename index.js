@@ -67,6 +67,59 @@ function rateLimit(req, res, next) {
 
 // -------- Middleware --------
 app.use(bodyParser.json());
+function mask(v, keep = 6) {
+  if (!v || typeof v !== 'string') return null;
+  if (v.length <= keep) return v;
+  return v.slice(0, keep) + '…' + v.slice(-4);
+}
+
+app.get('/health', (_req, res) => {
+  const haveStripeSecret = Boolean(process.env.STRIPE_SECRET_KEY);
+  const havePublicUrl = Boolean(process.env.PUBLIC_URL);
+  const stdPrice = process.env.STANDARD_PRICE_ID || '';
+  const proPrice = process.env.PREMIUM_PRICE_ID || '';
+  const haveAnyPrice = Boolean(stdPrice || proPrice);
+  const checkoutEnabled = Boolean(stripe && haveStripeSecret && havePublicUrl && haveAnyPrice);
+
+  res.json({
+    ok: true,
+    model: OPENAI_MODEL,
+    checkout_enabled: checkoutEnabled,
+    debug: {
+      stripe_secret_present: haveStripeSecret,
+      public_url_present: havePublicUrl,
+      standard_price_present: Boolean(stdPrice),
+      premium_price_present: Boolean(proPrice),
+      // masked for safety in logs/response
+      samples: {
+        STRIPE_SECRET_KEY: mask(process.env.STRIPE_SECRET_KEY),
+        STANDARD_PRICE_ID: stdPrice ? mask(stdPrice, 7) : null,
+        PREMIUM_PRICE_ID: proPrice ? mask(proPrice, 7) : null,
+        PUBLIC_URL: process.env.PUBLIC_URL || null,
+      },
+    },
+  });
+});
+
+// Calls Stripe to fetch your price objects so you can see the exact error if IDs/keys mismatch
+app.get('/debug/stripe', async (_req, res) => {
+  if (!stripe) return res.status(500).json({ ok: false, error: 'Stripe not initialized (missing STRIPE_SECRET_KEY?)' });
+  try {
+    const out = {};
+    if (process.env.STANDARD_PRICE_ID) {
+      try { out.standard = await stripe.prices.retrieve(process.env.STANDARD_PRICE_ID); }
+      catch (e) { out.standard_error = e.message; }
+    }
+    if (process.env.PREMIUM_PRICE_ID) {
+      try { out.premium = await stripe.prices.retrieve(process.env.PREMIUM_PRICE_ID); }
+      catch (e) { out.premium_error = e.message; }
+    }
+    res.json({ ok: true, out });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // -------- Routes --------
