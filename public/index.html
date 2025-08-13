@@ -1,17 +1,18 @@
 <!doctype html>
-<html lang="en">
+<html>
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>AutoPitch AI</title>
 
-    <!-- Optional: Stripe (safe to leave for later checkout wiring) -->
+    <!-- (Optional) Stripe.js – not strictly needed for simple server-side Checkout redirects,
+         but harmless to include if you later use client-side Stripe features. -->
     <script src="https://js.stripe.com/v3/"></script>
 
     <style>
       :root { --bg:#0b0f19; --card:#121725; --text:#eef1f6; --muted:#9aa4b2; --brand:#6aa6ff; --warn:#ffb86b; }
       * { box-sizing: border-box; }
-      body { background: var(--bg); color: var(--text); font-family: system-ui, Arial, sans-serif; margin:0; }
+      body { background: var(--bg); color: var(--text); font-family: system-ui, Arial, sans-serif; }
       .wrap { max-width: 1100px; margin: 32px auto; padding: 0 16px; }
       header { display:flex; align-items:center; justify-content:space-between; margin: 12px 0 24px; }
       .logo { display:flex; align-items:center; gap:10px; font-weight:700; }
@@ -42,7 +43,6 @@
       .tmpl .rowbtn { display:flex; gap:8px; margin-top:8px; }
       .paywall { background:#0e1322; border:1px dashed #2a334b; border-radius:10px; padding:12px; margin-top:12px; }
       .plans { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
-      @media (max-width: 960px) { .grid2 { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
@@ -58,12 +58,12 @@
           <p class="muted">Paste the job, your skills, choose tone + CTA, and how many variants to generate.</p>
 
           <div class="row">
-            <label for="job">Job description</label>
+            <label>Job description</label>
             <textarea id="job" placeholder="Paste the client post or job details here..."></textarea>
           </div>
 
           <div class="row">
-            <label for="skills">Your skills/services</label>
+            <label>Your skills/services</label>
             <textarea id="skills" placeholder="Describe your services and strengths..."></textarea>
           </div>
 
@@ -111,7 +111,7 @@
           <div class="results" id="results"></div>
         </div>
 
-        <!-- RIGHT: saved + paywall -->
+        <!-- RIGHT: saved templates + paywall -->
         <aside class="card">
           <h3 style="margin-top:0">Saved Templates</h3>
           <p class="muted">Click Save on any result to store it here.</p>
@@ -121,7 +121,8 @@
             <button class="btn warn" id="clearAll">Clear all</button>
           </div>
 
-          <div class="paywall" id="paywall" style="display:none">
+          <!-- Paywall: forced visible for testing -->
+          <div class="paywall" id="paywall" style="display:block">
             <strong>Upgrade for unlimited pitches</strong>
             <p class="muted">Choose a plan to unlock unlimited generations and faster models.</p>
             <div class="plans">
@@ -134,7 +135,7 @@
     </div>
 
     <script>
-      // ---------- helpers ----------
+      // ---------- small helpers ----------
       const $ = (id) => document.getElementById(id);
       const go = $('go'), results = $('results'), statusEl = $('status'), limitsEl = $('limits');
       const toolbar = $('toolbar'), copyAllBtn = $('copyAll'), downloadCsvBtn = $('downloadCsv');
@@ -145,7 +146,7 @@
       let freeCount = parseInt(localStorage.getItem('ap_free_count')||'0',10);
       let lastEmails = [];
 
-      function emailText(e) { return `Subject: ${e.subject}\\n\\n${e.body}`; }
+      function emailText(e) { return `Subject: ${e.subject}\n\n${e.body}`; }
       function copyToClipboard(text, btn) {
         navigator.clipboard.writeText(text).then(() => {
           const old = btn.textContent; btn.textContent = 'Copied!';
@@ -153,11 +154,11 @@
         }).catch(() => alert('Copy failed'));
       }
       function toCsv(rows) {
-        const esc = (s='') => \`"\${String(s).replace(/"/g,'""')}"\`;
+        const esc = (s='') => `"${String(s).replace(/"/g,'""')}"`;
         const header = ['subject','body'];
         const lines = [header.map(esc).join(',')];
         rows.forEach(r => lines.push([esc(r.subject), esc(r.body)].join(',')));
-        return lines.join('\\r\\n');
+        return lines.join('\r\n');
       }
       function download(name, mime, data) {
         const blob = new Blob([data], { type: mime });
@@ -166,7 +167,6 @@
         URL.revokeObjectURL(url);
       }
 
-      // ---------- saved templates ----------
       function loadTemplates() {
         const arr = JSON.parse(localStorage.getItem('ap_templates')||'[]');
         tmplList.innerHTML = '';
@@ -174,7 +174,7 @@
         arr.forEach((t, i) => {
           const div = document.createElement('div');
           div.className = 'tmpl';
-          div.innerHTML = \`<h4>\${t.subject||'(no subject)'}</h4><div class="small">Saved \${new Date(t.saved_at||Date.now()).toLocaleString()}</div><div style="margin-top:8px">\${(t.body||'').replace(/\\n/g,'<br>')}</div>\`;
+          div.innerHTML = `<h4>${t.subject||'(no subject)'}</h4><div class="small">Saved ${new Date(t.saved_at||Date.now()).toLocaleString()}</div><div style="margin-top:8px">${(t.body||'').replace(/\n/g,'<br>')}</div>`;
           const rowbtn = document.createElement('div'); rowbtn.className = 'rowbtn';
           const copyBtn = document.createElement('button'); copyBtn.className='btn'; copyBtn.textContent='Copy';
           copyBtn.onclick = () => copyToClipboard(emailText(t), copyBtn);
@@ -200,7 +200,7 @@
       }
 
       copyAllBtn.onclick = () => {
-        const text = lastEmails.map(emailText).join('\\n\\n---\\n\\n');
+        const text = lastEmails.map(emailText).join('\n\n---\n\n');
         copyToClipboard(text, copyAllBtn);
       };
       downloadCsvBtn.onclick = () => {
@@ -224,11 +224,17 @@
         try {
           const r = await fetch('/health');
           const j = await r.json();
+
           if (j?.rate_limit) {
-            limitsEl.textContent = \`Rate limit: \${j.rate_limit.max}/\${Math.round(j.rate_limit.window_ms/1000)}s\` + (j.model ? \` (model: \${j.model})\` : '');
+            limitsEl.textContent =
+              `Rate limit: ${j.rate_limit.max}/${Math.round(j.rate_limit.window_ms/1000)}s` +
+              (j.model ? ` (model: ${j.model})` : '');
           }
-          if (j?.checkout_enabled) paywall.style.display = 'block';
-        } catch {}
+
+          // FORCE the paywall visible so you can test checkout immediately,
+          // regardless of what /health says:
+          paywall.style.display = 'block';
+        } catch (e) {}
       }
 
       async function startCheckout(plan) {
@@ -273,14 +279,14 @@
           if (!emails.length) { statusEl.textContent = 'No emails returned. Try again.'; return; }
 
           lastEmails = emails;
-          statusEl.textContent = \`Generated \${emails.length} variant(s).\`;
+          statusEl.textContent = `Generated ${emails.length} variant(s).`;
           toolbar.style.display = 'flex';
           freeCount += 1; localStorage.setItem('ap_free_count', String(freeCount));
 
           emails.forEach((e, i) => {
             const card = document.createElement('div');
             card.className = 'email';
-            card.innerHTML = \`<h3>Variant \${i+1}: \${e.subject || '(no subject)'}</h3><div>\${(e.body || '').replace(/\\n/g, '<br>')}</div>\`;
+            card.innerHTML = `<h3>Variant ${i+1}: ${e.subject || '(no subject)'}</h3><div>${(e.body || '').replace(/\n/g, '<br>')}</div>`;
             const actions = document.createElement('div'); actions.className = 'actions';
             const copyBtn = document.createElement('button'); copyBtn.className = 'btn'; copyBtn.textContent = 'Copy';
             copyBtn.onclick = () => copyToClipboard(emailText(e), copyBtn);
@@ -297,6 +303,7 @@
         } finally { go.disabled = false; }
       }
 
+      // ---------- wire-up ----------
       go.addEventListener('click', generate);
       buyStdBtn.onclick = () => startCheckout('standard');
       buyProBtn.onclick = () => startCheckout('premium');
