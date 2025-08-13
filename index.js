@@ -1,6 +1,4 @@
-// Backend with: tone/CTA/variants, rate limit, robust parsing,
-// and Stripe subscriptions (Standard + Premium).
-
+// index.js — complete server (drop-in replacement)
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -9,47 +7,51 @@ const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fet
 
 const app = express();
 
-// -------- Config --------
+// ---- Config ----
 const PORT = process.env.PORT || 3000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '10', 10);
 const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10);
 
-// Stripe (optional but enabled if keys exist)
+// Stripe (optional)
 let stripe = null;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
-const STANDARD_PRICE_ID = process.env.STANDARD_PRICE_ID || ''; // e.g. price_123
-const PREMIUM_PRICE_ID  = process.env.PREMIUM_PRICE_ID  || ''; // e.g. price_456
-const PUBLIC_URL        = process.env.PUBLIC_URL        || ''; // e.g. https://autopitch-clean.onrender.com
+const STANDARD_PRICE_ID = process.env.STANDARD_PRICE_ID || '';
+const PREMIUM_PRICE_ID  = process.env.PREMIUM_PRICE_ID  || '';
+const PUBLIC_URL        = process.env.PUBLIC_URL        || '';
 
 try {
   if (STRIPE_SECRET_KEY) {
     const Stripe = require('stripe');
     stripe = Stripe(STRIPE_SECRET_KEY);
   }
-} catch {
+} catch (_) {
   stripe = null;
 }
 
-// -------- Helpers --------
-function cleanStr(v, fallback = '') { return (typeof v === 'string' ? v : fallback).toString().trim(); }
+// ---- Utils ----
+function mask(v, keep = 6) {
+  if (!v || typeof v !== 'string') return null;
+  if (v.length <= keep + 4) return v;
+  return v.slice(0, keep) + '…' + v.slice(-4);
+}
 
 function extractJson(text) {
   if (!text || typeof text !== 'string') return null;
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   const candidate = fence ? fence[1] : text;
-  const start = candidate.indexOf('{');
-  const end   = candidate.lastIndexOf('}');
-  if (start !== -1 && end !== -1 && end > start) {
-    try { return JSON.parse(candidate.slice(start, end + 1)); } catch {}
+  const s = candidate.indexOf('{');
+  const e = candidate.lastIndexOf('}');
+  if (s !== -1 && e !== -1 && e > s) {
+    try { return JSON.parse(candidate.slice(s, e + 1)); } catch {}
   }
   try { return JSON.parse(candidate); } catch {}
   return null;
 }
 
-// -------- Simple in-memory rate limiter --------
-const buckets = new Map(); // ip -> timestamps
+// Very simple in-memory rate limiter
+const buckets = new Map();
 function rateLimit(req, res, next) {
   const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
@@ -65,53 +67,48 @@ function rateLimit(req, res, next) {
   next();
 }
 
-// -------- Middleware --------
+// ---- Middleware ----
 app.use(bodyParser.json());
-function mask(v, keep = 6) {
-  if (!v || typeof v !== 'string') return null;
-  if (v.length <= keep) return v;
-  return v.slice(0, keep) + '…' + v.slice(-4);
-}
+app.use(express.static(path.join(__dirname, 'public')));
 
+// ---- Health & Stripe debug (safe) ----
 app.get('/health', (_req, res) => {
-  const haveStripeSecret = Boolean(process.env.STRIPE_SECRET_KEY);
-  const havePublicUrl = Boolean(process.env.PUBLIC_URL);
-  const stdPrice = process.env.STANDARD_PRICE_ID || '';
-  const proPrice = process.env.PREMIUM_PRICE_ID || '';
-  const haveAnyPrice = Boolean(stdPrice || proPrice);
-  const checkoutEnabled = Boolean(stripe && haveStripeSecret && havePublicUrl && haveAnyPrice);
-
+  const haveStripe = Boolean(stripe);
+  const haveSecret = Boolean(STRIPE_SECRET_KEY);
+  const haveUrl = Boolean(PUBLIC_URL);
+  const haveStd = Boolean(STANDARD_PRICE_ID);
+  const havePro = Boolean(PREMIUM_PRICE_ID);
+  const checkoutEnabled = haveStripe && haveSecret && haveUrl && (haveStd || havePro);
   res.json({
     ok: true,
     model: OPENAI_MODEL,
+    rate_limit: { max: RATE_LIMIT_MAX, window_ms: RATE_LIMIT_WINDOW_MS },
     checkout_enabled: checkoutEnabled,
     debug: {
-      stripe_secret_present: haveStripeSecret,
-      public_url_present: havePublicUrl,
-      standard_price_present: Boolean(stdPrice),
-      premium_price_present: Boolean(proPrice),
-      // masked for safety in logs/response
+      stripe_secret_present: haveSecret,
+      public_url_present: haveUrl,
+      standard_price_present: haveStd,
+      premium_price_present: havePro,
       samples: {
-        STRIPE_SECRET_KEY: mask(process.env.STRIPE_SECRET_KEY),
-        STANDARD_PRICE_ID: stdPrice ? mask(stdPrice, 7) : null,
-        PREMIUM_PRICE_ID: proPrice ? mask(proPrice, 7) : null,
-        PUBLIC_URL: process.env.PUBLIC_URL || null,
-      },
-    },
+        STRIPE_SECRET_KEY: mask(STRIPE_SECRET_KEY),
+        STANDARD_PRICE_ID: mask(STANDARD_PRICE_ID, 7),
+        PREMIUM_PRICE_ID: mask(PREMIUM_PRICE_ID, 7),
+        PUBLIC_URL: PUBLIC_URL || null,
+      }
+    }
   });
 });
 
-// Calls Stripe to fetch your price objects so you can see the exact error if IDs/keys mismatch
 app.get('/debug/stripe', async (_req, res) => {
-  if (!stripe) return res.status(500).json({ ok: false, error: 'Stripe not initialized (missing STRIPE_SECRET_KEY?)' });
   try {
+    if (!stripe) return res.status(500).json({ ok: false, error: 'Stripe not initialized (missing STRIPE_SECRET_KEY?)' });
     const out = {};
-    if (process.env.STANDARD_PRICE_ID) {
-      try { out.standard = await stripe.prices.retrieve(process.env.STANDARD_PRICE_ID); }
+    if (STANDARD_PRICE_ID) {
+      try { out.standard = await stripe.prices.retrieve(STANDARD_PRICE_ID); }
       catch (e) { out.standard_error = e.message; }
     }
-    if (process.env.PREMIUM_PRICE_ID) {
-      try { out.premium = await stripe.prices.retrieve(process.env.PREMIUM_PRICE_ID); }
+    if (PREMIUM_PRICE_ID) {
+      try { out.premium = await stripe.prices.retrieve(PREMIUM_PRICE_ID); }
       catch (e) { out.premium_error = e.message; }
     }
     res.json({ ok: true, out });
@@ -120,53 +117,35 @@ app.get('/debug/stripe', async (_req, res) => {
   }
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
-
-// -------- Routes --------
+// ---- Root ----
 app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.get('/health', (_req, res) => {
-  res.json({
-    ok: true,
-    model: OPENAI_MODEL,
-    rate_limit: { max: RATE_LIMIT_MAX, window_ms: RATE_LIMIT_WINDOW_MS },
-    checkout_enabled: Boolean(stripe && (STANDARD_PRICE_ID || PREMIUM_PRICE_ID) && PUBLIC_URL),
-  });
-});
-
+// ---- Generate ----
 app.post('/generate', rateLimit, async (req, res) => {
   const { job, skills, tone, ctaStyle, variants } = req.body || {};
   if (!OPENAI_API_KEY) return res.status(500).json({ error: 'Server missing OPENAI_API_KEY' });
   if (!job || !skills)   return res.status(400).json({ error: 'Missing job or skills in request body.' });
 
-  const selectedTone = cleanStr(tone, 'Friendly');
-  const selectedCTA  = cleanStr(ctaStyle, 'Book a quick call');
-  const count        = Math.max(1, Math.min(5, parseInt(variants, 10) || 1));
+  const t = (typeof tone === 'string' && tone.trim()) || 'Friendly';
+  const cta = (typeof ctaStyle === 'string' && ctaStyle.trim()) || 'Book a quick call';
+  const count = Math.max(1, Math.min(5, parseInt(variants, 10) || 1));
 
-  const prompt =
-`Create ${count} cold outreach emails in a ${selectedTone} tone. Each must be concise, skimmable, and include ONE clear call to action in the style: "${selectedCTA}" (rephrase to match tone).
-
-Job description: ${job}
-Freelancer skills: ${skills}
-
-Return ONLY JSON like:
-{ "emails": [ { "subject": string, "body": string }, ... ] }
-The "emails" array length MUST be exactly ${count}. No markdown/code fences—JSON only.`;
+  const prompt = `Create ${count} cold outreach emails in a ${t} tone. Each must include a clear CTA like "${cta}" (rephrase to match tone).\n\nJob description: ${job}\nFreelancer skills: ${skills}\n\nReturn ONLY JSON like: { "emails": [ { "subject": string, "body": string } ] } with exactly ${count} items.`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: OPENAI_MODEL,
         messages: [
           { role: 'system', content: 'You write professional, conversion-focused cold outreach emails.' },
-          { role: 'user', content: prompt },
+          { role: 'user', content: prompt }
         ],
-        temperature: 0.7,
-      }),
+        temperature: 0.7
+      })
     });
 
     if (!response.ok) {
@@ -177,16 +156,12 @@ The "emails" array length MUST be exactly ${count}. No markdown/code fences—JS
 
     const data = await response.json();
     const content = data?.choices?.[0]?.message?.content || '';
-
-    let emails = [];
     const parsed = extractJson(content);
+    let emails = [];
     if (parsed && Array.isArray(parsed.emails)) {
       emails = parsed.emails.filter(e => e && typeof e.subject === 'string' && typeof e.body === 'string');
     } else {
-      try {
-        const single = JSON.parse(content);
-        if (single && single.subject && single.body) emails = [single];
-      } catch {}
+      try { const single = JSON.parse(content); if (single?.subject && single?.body) emails = [single]; } catch {}
     }
 
     if (!emails.length) return res.json({ emails: [{ subject: 'Draft', body: content }] });
@@ -196,19 +171,19 @@ The "emails" array length MUST be exactly ${count}. No markdown/code fences—JS
   }
 });
 
-// Stripe Checkout (subscription) for Standard or Premium plan
+// ---- Stripe Checkout (subscription) ----
 app.post('/checkout', async (req, res) => {
   try {
     if (!stripe || !PUBLIC_URL) return res.status(501).json({ error: 'Checkout not configured on server.' });
-    const plan = cleanStr(req.body?.plan, 'standard');
-    const priceId = plan.toLowerCase() === 'premium' ? PREMIUM_PRICE_ID : STANDARD_PRICE_ID;
+    const plan = (req.body?.plan || 'standard').toString().toLowerCase();
+    const priceId = plan === 'premium' ? PREMIUM_PRICE_ID : STANDARD_PRICE_ID;
     if (!priceId) return res.status(400).json({ error: `Missing price for plan: ${plan}` });
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${PUBLIC_URL}/?success=1&plan=${encodeURIComponent(plan)}`,
-      cancel_url: `${PUBLIC_URL}/?cancel=1`,
+      cancel_url: `${PUBLIC_URL}/?cancel=1`
     });
 
     return res.json({ url: session.url });
@@ -217,6 +192,7 @@ app.post('/checkout', async (req, res) => {
   }
 });
 
+// ---- Listen ----
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
