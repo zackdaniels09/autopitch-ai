@@ -118,7 +118,8 @@
             <button class="btn warn" id="clearAll">Clear all</button>
           </div>
 
-          <div class="paywall" id="paywall" style="display:none">
+          <!-- Pricing/Upgrade is now ALWAYS visible when checkout is enabled -->
+          <div class="paywall" id="paywall">
             <strong>Upgrade for unlimited pitches</strong>
             <p class="muted">Choose a plan to unlock unlimited generations and faster models.</p>
             <div class="plans">
@@ -203,7 +204,8 @@
           const j = await r.json();
           if (j?.rate_limit) { limitsEl.textContent = `Rate limit: ${j.rate_limit.max}/${Math.round(j.rate_limit.window_ms/1000)}s` + (j.model ? ` (model: ${j.model})` : ''); }
           checkoutEnabled = !!j?.checkout_enabled;
-          if (freeCount >= FREE_MODE_MAX && checkoutEnabled) paywall.style.display = 'block'; else paywall.style.display = 'none';
+          // NEW: Always show pricing when checkout is enabled
+          paywall.style.display = checkoutEnabled ? 'block' : 'none';
         } catch {}
       }
 
@@ -224,9 +226,10 @@
         const variants = parseInt($('variants').value, 10) || 1;
         if (!job || !skills) { alert('Please fill both fields.'); return; }
 
+        // You can still cap generations if you want
         if (freeCount >= FREE_MODE_MAX) {
           if (checkoutEnabled) { paywall.style.display = 'block'; }
-          else { alert('Free limit reached. Please try again later.'); }
+          alert('Free limit reached. Please upgrade to continue.');
           return;
         }
 
