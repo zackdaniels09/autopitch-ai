@@ -39,7 +39,12 @@
       .tmpl .rowbtn { display:flex; gap:8px; margin-top:8px; }
       .paywall { background:#0e1322; border:1px dashed #2a334b; border-radius:10px; padding:12px; margin-top:12px; }
       .plans { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
-      @media (max-width: 960px) { .grid2 { grid-template-columns: 1fr; } }
+      .features { margin-top:10px; display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+      .feat { background:#0e1322; border:1px solid #2a334b; border-radius:10px; padding:10px; }
+      .feat h4 { margin:0 0 6px; font-size:14px; color:#cfd6e4; }
+      .feat ul { margin:0; padding-left:18px; color: var(--muted); font-size:14px; }
+      .paywall-mobile { display:none; margin-top:16px; }
+      @media (max-width: 960px) { .grid2 { grid-template-columns: 1fr; } .paywall-mobile { display:block; } }
       footer { margin:24px 0; text-align:center; color:#9aa4b2; }
       footer a { color:inherit; text-decoration:none; }
     </style>
@@ -62,7 +67,7 @@
 
           <div class="row">
             <label for="skills">Your skills/services</label>
-            <textarea id="skills" placeholder="Describe your services and strengths..."></textarea>
+            <textarea id="skills" placeholder="Describe your services and strengths...	extarea>
           </div>
 
           <div class="row grid">
@@ -107,6 +112,39 @@
           </div>
 
           <div class="results" id="results"></div>
+
+          <!-- Mobile pricing duplication (visible under editor on small screens) -->
+          <div class="paywall-mobile" id="paywallMobile">
+            <div class="paywall">
+              <strong>Upgrade for unlimited pitches</strong>
+              <p class="muted">Choose a plan to unlock unlimited generations and faster models.</p>
+              <div class="plans">
+                <button class="btn" id="buyStdMobile">Standard – $19/mo</button>
+                <button class="btn" id="buyProMobile">Premium – $39/mo</button>
+              </div>
+              <div class="features">
+                <div class="feat">
+                  <h4>Standard includes</h4>
+                  <ul>
+                    <li>Unlimited generations*</li>
+                    <li>Smart tone & CTA controls</li>
+                    <li>Save, copy, CSV export</li>
+                    <li>Email templates library</li>
+                  </ul>
+                </div>
+                <div class="feat">
+                  <h4>Premium adds</h4>
+                  <ul>
+                    <li>Faster model responses</li>
+                    <li>Priority rate limits</li>
+                    <li>Priority support</li>
+                    <li>Early feature access</li>
+                  </ul>
+                </div>
+              </div>
+              <p class="muted" style="margin-top:8px">*Fair use policy applies.</p>
+            </div>
+          </div>
         </div>
 
         <aside class="card">
@@ -118,7 +156,7 @@
             <button class="btn warn" id="clearAll">Clear all</button>
           </div>
 
-          <!-- Pricing/Upgrade is now ALWAYS visible when checkout is enabled -->
+          <!-- Sidebar pricing (always visible when checkout enabled) -->
           <div class="paywall" id="paywall">
             <strong>Upgrade for unlimited pitches</strong>
             <p class="muted">Choose a plan to unlock unlimited generations and faster models.</p>
@@ -126,6 +164,27 @@
               <button class="btn" id="buyStd">Standard – $19/mo</button>
               <button class="btn" id="buyPro">Premium – $39/mo</button>
             </div>
+            <div class="features">
+              <div class="feat">
+                <h4>Standard includes</h4>
+                <ul>
+                  <li>Unlimited generations*</li>
+                  <li>Smart tone & CTA controls</li>
+                  <li>Save, copy, CSV export</li>
+                  <li>Email templates library</li>
+                </ul>
+              </div>
+              <div class="feat">
+                <h4>Premium adds</h4>
+                <ul>
+                  <li>Faster model responses</li>
+                  <li>Priority rate limits</li>
+                  <li>Priority support</li>
+                  <li>Early feature access</li>
+                </ul>
+              </div>
+            </div>
+            <p class="muted" style="margin-top:8px">*Fair use policy applies.</p>
           </div>
         </aside>
       </div>
@@ -140,16 +199,21 @@
       const go = $('go'), results = $('results'), statusEl = $('status'), limitsEl = $('limits');
       const toolbar = $('toolbar'), copyAllBtn = $('copyAll'), downloadCsvBtn = $('downloadCsv');
       const tmplList = $('templates'), exportAllBtn = $('exportAll'), clearAllBtn = $('clearAll');
-      const paywall = $('paywall'), buyStdBtn = $('buyStd'), buyProBtn = $('buyPro');
+      const paywall = $('paywall'), paywallMobile = $('paywallMobile');
+      const buyStdBtn = $('buyStd'), buyProBtn = $('buyPro');
+      const buyStdMobile = $('buyStdMobile'), buyProMobile = $('buyProMobile');
 
       const FREE_MODE_MAX = 10;
       let freeCount = parseInt(localStorage.getItem('ap_free_count')||'0',10);
       let lastEmails = [];
       let checkoutEnabled = false;
 
-      function emailText(e) { return `Subject: ${e.subject}\n\n${e.body}`; }
+      function emailText(e) { return `Subject: ${e.subject}
+
+${e.body}`; }
       function copyToClipboard(text, btn) { navigator.clipboard.writeText(text).then(() => { const old = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = old, 1200); }).catch(() => alert('Copy failed')); }
-      function toCsv(rows) { const esc = (s='') => `"${String(s).replace(/"/g,'""')}"`; const header = ['subject','body']; const lines = [header.map(esc).join(',')]; rows.forEach(r => lines.push([esc(r.subject), esc(r.body)].join(','))); return lines.join('\r\n'); }
+      function toCsv(rows) { const esc = (s='') => `"${String(s).replace(/"/g,'""')}"`; const header = ['subject','body']; const lines = [header.map(esc).join(',')]; rows.forEach(r => lines.push([esc(r.subject), esc(r.body)].join(','))); return lines.join('
+'); }
       function download(name, mime, data) { const blob = new Blob([data], { type: mime }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url); }
 
       function loadTemplates() {
@@ -159,12 +223,13 @@
         arr.forEach((t, i) => {
           const div = document.createElement('div');
           div.className = 'tmpl';
-          div.innerHTML = `<h4>${t.subject||'(no subject)'}</h4><div class="small">Saved ${new Date(t.saved_at||Date.now()).toLocaleString()}</div><div style="margin-top:8px">${(t.body||'').replace(/\n/g,'<br>')}</div>`;
+          div.innerHTML = `<h4>${t.subject||'(no subject)'}</h4><div class="small">Saved ${new Date(t.saved_at||Date.now()).toLocaleString()}</div><div style="margin-top:8px">${(t.body||'').replace(/
+/g,'<br>')}</div>`;
           const rowbtn = document.createElement('div'); rowbtn.className = 'rowbtn';
           const copyBtn = document.createElement('button'); copyBtn.className='btn'; copyBtn.textContent='Copy';
           copyBtn.onclick = () => copyToClipboard(emailText(t), copyBtn);
           const dlBtn = document.createElement('button'); dlBtn.className='btn'; dlBtn.textContent='Download .txt';
-          dlBtn.onclick = () => download((t.subject||'email').replace(/[\\\/:*?"<>|]+/g,'_') + '.txt', 'text/plain', emailText(t));
+          dlBtn.onclick = () => download((t.subject||'email').replace(/[\\/:*?"<>|]+/g,'_') + '.txt', 'text/plain', emailText(t));
           const delBtn = document.createElement('button'); delBtn.className='btn warn'; delBtn.textContent='Delete';
           delBtn.onclick = () => {
             const arr2 = JSON.parse(localStorage.getItem('ap_templates')||'[]');
@@ -177,6 +242,7 @@
           tmplList.appendChild(div);
         });
       }
+
       function saveTemplate(e) {
         const arr = JSON.parse(localStorage.getItem('ap_templates')||'[]');
         arr.unshift({ subject: e.subject||'', body: e.body||'', saved_at: Date.now() });
@@ -184,7 +250,11 @@
         loadTemplates();
       }
 
-      copyAllBtn.onclick = () => { const text = lastEmails.map(emailText).join('\n\n---\n\n'); copyToClipboard(text, copyAllBtn); };
+      copyAllBtn.onclick = () => { const text = lastEmails.map(emailText).join('
+
+---
+
+'); copyToClipboard(text, copyAllBtn); };
       downloadCsvBtn.onclick = () => { const csv = toCsv(lastEmails); download('autopitch_emails.csv', 'text/csv', csv); };
       exportAllBtn.onclick = () => {
         const arr = JSON.parse(localStorage.getItem('ap_templates')||'[]');
@@ -204,8 +274,9 @@
           const j = await r.json();
           if (j?.rate_limit) { limitsEl.textContent = `Rate limit: ${j.rate_limit.max}/${Math.round(j.rate_limit.window_ms/1000)}s` + (j.model ? ` (model: ${j.model})` : ''); }
           checkoutEnabled = !!j?.checkout_enabled;
-          // NEW: Always show pricing when checkout is enabled
-          paywall.style.display = checkoutEnabled ? 'block' : 'none';
+          // Always show pricing blocks when checkout is enabled
+          if (checkoutEnabled) { paywall.style.display = 'block'; if (paywallMobile) paywallMobile.style.display = 'block'; }
+          else { paywall.style.display = 'none'; if (paywallMobile) paywallMobile.style.display = 'none'; }
         } catch {}
       }
 
@@ -225,13 +296,6 @@
         const ctaStyle = $('cta').value.trim();
         const variants = parseInt($('variants').value, 10) || 1;
         if (!job || !skills) { alert('Please fill both fields.'); return; }
-
-        // You can still cap generations if you want
-        if (freeCount >= FREE_MODE_MAX) {
-          if (checkoutEnabled) { paywall.style.display = 'block'; }
-          alert('Free limit reached. Please upgrade to continue.');
-          return;
-        }
 
         statusEl.textContent = 'Generating...';
         results.innerHTML = '';
@@ -255,12 +319,13 @@
           emails.forEach((e, i) => {
             const card = document.createElement('div');
             card.className = 'email';
-            card.innerHTML = `<h3>Variant ${i+1}: ${e.subject || '(no subject)'}</h3><div>${(e.body || '').replace(/\n/g, '<br>')}</div>`;
+            card.innerHTML = `<h3>Variant ${i+1}: ${e.subject || '(no subject)')}</h3><div>${(e.body || '').replace(/
+/g, '<br>')}</div>`;
             const actions = document.createElement('div'); actions.className = 'actions';
             const copyBtn = document.createElement('button'); copyBtn.className = 'btn'; copyBtn.textContent = 'Copy';
             copyBtn.onclick = () => copyToClipboard(emailText(e), copyBtn);
             const dlBtn = document.createElement('button'); dlBtn.className = 'btn'; dlBtn.textContent = 'Download .txt';
-            dlBtn.onclick = () => download((e.subject||'email').replace(/[\\\/:*?"<>|]+/g,'_') + '.txt', 'text/plain', emailText(e));
+            dlBtn.onclick = () => download((e.subject||'email').replace(/[\\/:*?"<>|]+/g,'_') + '.txt', 'text/plain', emailText(e));
             const saveBtn = document.createElement('button'); saveBtn.className = 'btn'; saveBtn.textContent = 'Save';
             saveBtn.onclick = () => saveTemplate(e);
             actions.appendChild(copyBtn); actions.appendChild(dlBtn); actions.appendChild(saveBtn);
@@ -273,8 +338,10 @@
       }
 
       go.addEventListener('click', generate);
-      (document.getElementById('buyStd')||{}).onclick = () => startCheckout('standard');
-      (document.getElementById('buyPro')||{}).onclick = () => startCheckout('premium');
+      if (buyStdBtn) buyStdBtn.onclick = () => startCheckout('standard');
+      if (buyProBtn) buyProBtn.onclick = () => startCheckout('premium');
+      if (buyStdMobile) buyStdMobile.onclick = () => startCheckout('standard');
+      if (buyProMobile) buyProMobile.onclick = () => startCheckout('premium');
 
       loadTemplates();
       refreshLimits();
