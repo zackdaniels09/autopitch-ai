@@ -1,14 +1,11 @@
+<!-- FILE: C:\Users\zacka\autopitch-ai\public\index.html -->
 <!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>AutoPitch AI</title>
-
-    <!-- (Optional) Stripe.js – not strictly needed for simple server-side Checkout redirects,
-         but harmless to include if you later use client-side Stripe features. -->
     <script src="https://js.stripe.com/v3/"></script>
-
     <style>
       :root { --bg:#0b0f19; --card:#121725; --text:#eef1f6; --muted:#9aa4b2; --brand:#6aa6ff; --warn:#ffb86b; }
       * { box-sizing: border-box; }
@@ -43,6 +40,7 @@
       .tmpl .rowbtn { display:flex; gap:8px; margin-top:8px; }
       .paywall { background:#0e1322; border:1px dashed #2a334b; border-radius:10px; padding:12px; margin-top:12px; }
       .plans { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+      @media (max-width: 960px) { .grid2 { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
@@ -53,17 +51,16 @@
       </header>
 
       <div class="grid2">
-        <!-- LEFT: composer -->
         <div class="card">
           <p class="muted">Paste the job, your skills, choose tone + CTA, and how many variants to generate.</p>
 
           <div class="row">
-            <label>Job description</label>
+            <label for="job">Job description</label>
             <textarea id="job" placeholder="Paste the client post or job details here..."></textarea>
           </div>
 
           <div class="row">
-            <label>Your skills/services</label>
+            <label for="skills">Your skills/services</label>
             <textarea id="skills" placeholder="Describe your services and strengths..."></textarea>
           </div>
 
@@ -111,7 +108,6 @@
           <div class="results" id="results"></div>
         </div>
 
-        <!-- RIGHT: saved templates + paywall -->
         <aside class="card">
           <h3 style="margin-top:0">Saved Templates</h3>
           <p class="muted">Click Save on any result to store it here.</p>
@@ -121,8 +117,7 @@
             <button class="btn warn" id="clearAll">Clear all</button>
           </div>
 
-          <!-- Paywall: forced visible for testing -->
-          <div class="paywall" id="paywall" style="display:block">
+          <div class="paywall" id="paywall" style="display:none">
             <strong>Upgrade for unlimited pitches</strong>
             <p class="muted">Choose a plan to unlock unlimited generations and faster models.</p>
             <div class="plans">
@@ -135,7 +130,6 @@
     </div>
 
     <script>
-      // ---------- small helpers ----------
       const $ = (id) => document.getElementById(id);
       const go = $('go'), results = $('results'), statusEl = $('status'), limitsEl = $('limits');
       const toolbar = $('toolbar'), copyAllBtn = $('copyAll'), downloadCsvBtn = $('downloadCsv');
@@ -145,105 +139,35 @@
       const FREE_MODE_MAX = 10; // client soft cap
       let freeCount = parseInt(localStorage.getItem('ap_free_count')||'0',10);
       let lastEmails = [];
+      let checkoutEnabled = false; // set by /health
 
       function emailText(e) { return `Subject: ${e.subject}\n\n${e.body}`; }
-      function copyToClipboard(text, btn) {
-        navigator.clipboard.writeText(text).then(() => {
-          const old = btn.textContent; btn.textContent = 'Copied!';
-          setTimeout(() => btn.textContent = old, 1200);
-        }).catch(() => alert('Copy failed'));
-      }
-      function toCsv(rows) {
-        const esc = (s='') => `"${String(s).replace(/"/g,'""')}"`;
-        const header = ['subject','body'];
-        const lines = [header.map(esc).join(',')];
-        rows.forEach(r => lines.push([esc(r.subject), esc(r.body)].join(',')));
-        return lines.join('\r\n');
-      }
-      function download(name, mime, data) {
-        const blob = new Blob([data], { type: mime });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = name; a.click();
-        URL.revokeObjectURL(url);
-      }
+      function copyToClipboard(text, btn) { navigator.clipboard.writeText(text).then(() => { const old = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = old, 1200); }).catch(() => alert('Copy failed')); }
+      function toCsv(rows) { const esc = (s='') => `"${String(s).replace(/"/g,'""')}"`; const header = ['subject','body']; const lines = [header.map(esc).join(',')]; rows.forEach(r => lines.push([esc(r.subject), esc(r.body)].join(','))); return lines.join('\r\n'); }
+      function download(name, mime, data) { const blob = new Blob([data], { type: mime }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url); }
 
-      function loadTemplates() {
-        const arr = JSON.parse(localStorage.getItem('ap_templates')||'[]');
-        tmplList.innerHTML = '';
-        if (!arr.length) { tmplList.innerHTML = '<div class="muted">No saved templates yet.</div>'; return; }
-        arr.forEach((t, i) => {
-          const div = document.createElement('div');
-          div.className = 'tmpl';
-          div.innerHTML = `<h4>${t.subject||'(no subject)'}</h4><div class="small">Saved ${new Date(t.saved_at||Date.now()).toLocaleString()}</div><div style="margin-top:8px">${(t.body||'').replace(/\n/g,'<br>')}</div>`;
-          const rowbtn = document.createElement('div'); rowbtn.className = 'rowbtn';
-          const copyBtn = document.createElement('button'); copyBtn.className='btn'; copyBtn.textContent='Copy';
-          copyBtn.onclick = () => copyToClipboard(emailText(t), copyBtn);
-          const dlBtn = document.createElement('button'); dlBtn.className='btn'; dlBtn.textContent='Download .txt';
-          dlBtn.onclick = () => download((t.subject||'email').replace(/[\\\/:*?"<>|]+/g,'_') + '.txt', 'text/plain', emailText(t));
-          const delBtn = document.createElement('button'); delBtn.className='btn warn'; delBtn.textContent='Delete';
-          delBtn.onclick = () => {
-            const arr2 = JSON.parse(localStorage.getItem('ap_templates')||'[]');
-            arr2.splice(i,1);
-            localStorage.setItem('ap_templates', JSON.stringify(arr2));
-            loadTemplates();
-          };
-          rowbtn.appendChild(copyBtn); rowbtn.appendChild(dlBtn); rowbtn.appendChild(delBtn);
-          div.appendChild(rowbtn);
-          tmplList.appendChild(div);
-        });
-      }
-      function saveTemplate(e) {
-        const arr = JSON.parse(localStorage.getItem('ap_templates')||'[]');
-        arr.unshift({ subject: e.subject||'', body: e.body||'', saved_at: Date.now() });
-        localStorage.setItem('ap_templates', JSON.stringify(arr.slice(0,200)));
-        loadTemplates();
-      }
+      function loadTemplates() { const arr = JSON.parse(localStorage.getItem('ap_templates')||'[]'); tmplList.innerHTML = ''; if (!arr.length) { tmplList.innerHTML = '<div class="muted">No saved templates yet.</div>'; return; } arr.forEach((t, i) => { const div = document.createElement('div'); div.className = 'tmpl'; div.innerHTML = `<h4>${t.subject||'(no subject)'}</h4><div class="small">Saved ${new Date(t.saved_at||Date.now()).toLocaleString()}</div><div style="margin-top:8px">${(t.body||'').replace(/\n/g,'<br>')}</div>`; const rowbtn = document.createElement('div'); rowbtn.className = 'rowbtn'; const copyBtn = document.createElement('button'); copyBtn.className='btn'; copyBtn.textContent='Copy'; copyBtn.onclick = () => copyToClipboard(emailText(t), copyBtn); const dlBtn = document.createElement('button'); dlBtn.className='btn'; dlBtn.textContent='Download .txt'; dlBtn.onclick = () => download((t.subject||'email').replace(/[\\\/:*?"<>|]+/g,'_') + '.txt', 'text/plain', emailText(t)); const delBtn = document.createElement('button'); delBtn.className='btn warn'; delBtn.textContent='Delete'; delBtn.onclick = () => { const arr2 = JSON.parse(localStorage.getItem('ap_templates')||'[]'); arr2.splice(i,1); localStorage.setItem('ap_templates', JSON.stringify(arr2)); loadTemplates(); }; rowbtn.appendChild(copyBtn); rowbtn.appendChild(dlBtn); rowbtn.appendChild(delBtn); div.appendChild(rowbtn); tmplList.appendChild(div); }); }
+      function saveTemplate(e) { const arr = JSON.parse(localStorage.getItem('ap_templates')||'[]'); arr.unshift({ subject: e.subject||'', body: e.body||'', saved_at: Date.now() }); localStorage.setItem('ap_templates', JSON.stringify(arr.slice(0,200))); loadTemplates(); }
 
-      copyAllBtn.onclick = () => {
-        const text = lastEmails.map(emailText).join('\n\n---\n\n');
-        copyToClipboard(text, copyAllBtn);
-      };
-      downloadCsvBtn.onclick = () => {
-        const csv = toCsv(lastEmails);
-        download('autopitch_emails.csv', 'text/csv', csv);
-      };
-      exportAllBtn.onclick = () => {
-        const arr = JSON.parse(localStorage.getItem('ap_templates')||'[]');
-        if (!arr.length) return alert('No saved templates.');
-        download('autopitch_templates.csv', 'text/csv', toCsv(arr));
-      };
-      clearAllBtn.onclick = () => {
-        if (confirm('Delete all saved templates?')) {
-          localStorage.removeItem('ap_templates');
-          loadTemplates();
-        }
-      };
+      copyAllBtn.onclick = () => { const text = lastEmails.map(emailText).join('\n\n---\n\n'); copyToClipboard(text, copyAllBtn); };
+      downloadCsvBtn.onclick = () => { const csv = toCsv(lastEmails); download('autopitch_emails.csv', 'text/csv', csv); };
+      exportAllBtn.onclick = () => { const arr = JSON.parse(localStorage.getItem('ap_templates')||'[]'); if (!arr.length) return alert('No saved templates.'); download('autopitch_templates.csv', 'text/csv', toCsv(arr)); };
+      clearAllBtn.onclick = () => { if (confirm('Delete all saved templates?')) { localStorage.removeItem('ap_templates'); loadTemplates(); } };
 
-      // ---------- backend calls ----------
       async function refreshLimits() {
         try {
           const r = await fetch('/health');
           const j = await r.json();
-
-          if (j?.rate_limit) {
-            limitsEl.textContent =
-              `Rate limit: ${j.rate_limit.max}/${Math.round(j.rate_limit.window_ms/1000)}s` +
-              (j.model ? ` (model: ${j.model})` : '');
-          }
-
-          // FORCE the paywall visible so you can test checkout immediately,
-          // regardless of what /health says:
-          paywall.style.display = 'block';
-        } catch (e) {}
+          if (j?.rate_limit) { limitsEl.textContent = `Rate limit: ${j.rate_limit.max}/${Math.round(j.rate_limit.window_ms/1000)}s` + (j.model ? ` (model: ${j.model})` : ''); }
+          checkoutEnabled = !!j?.checkout_enabled;
+          // Only show paywall once free cap is hit AND server says checkout is enabled
+          if (freeCount >= FREE_MODE_MAX && checkoutEnabled) paywall.style.display = 'block'; else paywall.style.display = 'none';
+        } catch {}
       }
 
       async function startCheckout(plan) {
         try {
-          const r = await fetch('/checkout', {
-            method: 'POST',
-            headers: { 'Content-Type':'application/json' },
-            body: JSON.stringify({ plan })
-          });
+          const r = await fetch('/checkout', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ plan }) });
           const j = await r.json();
           if (j?.url) { window.location.href = j.url; return; }
           alert(j?.error || 'Checkout not available.');
@@ -258,7 +182,7 @@
         const variants = parseInt($('variants').value, 10) || 1;
         if (!job || !skills) { alert('Please fill both fields.'); return; }
 
-        if (freeCount >= FREE_MODE_MAX) { paywall.style.display = 'block'; return; }
+        if (freeCount >= FREE_MODE_MAX) { if (checkoutEnabled) { paywall.style.display = 'block'; } else { alert('Free limit reached. Please try again later.'); } return; }
 
         statusEl.textContent = 'Generating...';
         results.innerHTML = '';
@@ -267,11 +191,7 @@
         lastEmails = [];
 
         try {
-          const res = await fetch('/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ job, skills, tone, ctaStyle, variants })
-          });
+          const res = await fetch('/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job, skills, tone, ctaStyle, variants }) });
           const data = await res.json();
           if (!res.ok) { statusEl.textContent = 'Error: ' + (data?.error || res.status); console.error(data); return; }
 
@@ -303,10 +223,9 @@
         } finally { go.disabled = false; }
       }
 
-      // ---------- wire-up ----------
       go.addEventListener('click', generate);
-      buyStdBtn.onclick = () => startCheckout('standard');
-      buyProBtn.onclick = () => startCheckout('premium');
+      (document.getElementById('buyStd')||{}).onclick = () => startCheckout('standard');
+      (document.getElementById('buyPro')||{}).onclick = () => startCheckout('premium');
 
       loadTemplates();
       refreshLimits();

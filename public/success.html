@@ -1,0 +1,54 @@
+<!-- FILE: C:\Users\zacka\autopitch-ai\public\success.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Payment Successful • AutoPitch AI</title>
+  <style>
+    :root { --bg:#0b0f19; --card:#121725; --text:#eef1f6; --muted:#9aa4b2; --brand:#6aa6ff; }
+    * { box-sizing:border-box; }
+    body { background: var(--bg); color: var(--text); font-family: system-ui, Arial, sans-serif; margin:0; }
+    .wrap { max-width: 720px; margin: 40px auto; padding: 0 16px; }
+    .card { background: var(--card); border: 1px solid #222940; border-radius: 14px; padding: 24px; }
+    h1 { margin: 0 0 10px; }
+    p { color: var(--muted); margin: 8px 0 0; }
+    .actions { display:flex; gap:10px; margin-top:20px; }
+    a.btn {
+      display:inline-block; padding:10px 14px; border-radius:10px; text-decoration:none; font-weight:700;
+      background: var(--brand); color:#0b0f19;
+    }
+    a.btn.secondary {
+      background: transparent; color: var(--text); border:1px solid #2a334b;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>✅ Payment successful</h1>
+      <p id="plan" class="muted">Thanks for upgrading! Your subscription is active.</p>
+      <div class="actions">
+        <a class="btn" href="/">Return to AutoPitch AI</a>
+        <a id="manage" class="btn secondary" href="#" rel="noopener">Manage Billing</a>
+      </div>
+    </div>
+  </div>
+  <script>
+    // Optional: show plan from URL and open Stripe Customer Portal using session_id
+    const p = new URLSearchParams(location.search);
+    const plan = p.get('plan');
+    if (plan) document.getElementById('plan').textContent = `Your plan: ${plan}. You now have unlimited generations.`;
+    const sid = p.get('session_id');
+    document.getElementById('manage').onclick = async (e) => {
+      e.preventDefault();
+      try {
+        const r = await fetch('/portal', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ session_id: sid }) });
+        const j = await r.json();
+        if (j?.url) { location.href = j.url; return; }
+        alert(j?.error || 'Unable to open billing portal.');
+      } catch (err) { alert('Portal error: ' + err.message); }
+    };
+  </script>
+</body>
+</html>
