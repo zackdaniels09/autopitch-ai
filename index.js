@@ -1,5 +1,5 @@
 # FILE: C:\Users\zacka\autopitch-ai\index.js
-// index.js — launch-ready server: OpenAI generate + Stripe checkout/portal + safer input + 404/500
+// index.js — add premium model support + plan-aware variants
 require('dotenv').config();
 const path = require('path');
 const express = require('express');
@@ -10,6 +10,7 @@ const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fet
 const PORT = process.env.PORT || 3000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const OPENAI_MODEL_PREMIUM = process.env.OPENAI_MODEL_PREMIUM || '';
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const STANDARD_PRICE_ID = process.env.STANDARD_PRICE_ID || '';
@@ -43,7 +44,7 @@ function extractJson(text) {
 
 // ---- App ----
 const app = express();
-app.use(bodyParser.json({ limit: '8kb' })); // guard large payloads
+app.use(bodyParser.json({ limit: '8kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Pages
@@ -53,7 +54,7 @@ app.get('/privacy', (_req, res) => res.sendFile(path.join(__dirname, 'public', '
 app.get('/terms',   (_req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
 app.get('/',        (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-// Rate limiter (simple in-memory per-IP)
+// Rate limiter (simple per-IP)
 const buckets = new Map();
 function rateLimit(req, res, next) {
   const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'ip';
@@ -67,13 +68,14 @@ function rateLimit(req, res, next) {
   next();
 }
 
-// Health/debug
+// Health
 app.get('/health', (_req, res) => {
   const haveStripe = Boolean(stripe);
   const checkoutEnabled = haveStripe && Boolean(STANDARD_PRICE_ID || PREMIUM_PRICE_ID);
   res.json({
     ok: true,
     model: OPENAI_MODEL,
+    premium_model_enabled: Boolean(OPENAI_MODEL_PREMIUM),
     rate_limit: { max: RATE_LIMIT_MAX, window_ms: RATE_LIMIT_WINDOW_MS },
     checkout_enabled: checkoutEnabled,
     debug: {
@@ -91,20 +93,12 @@ app.get('/health', (_req, res) => {
   });
 });
 
-app.get('/debug/stripe', async (_req, res) => {
-  try {
-    if (!stripe) return res.status(500).json({ ok: false, error: 'Stripe not initialized' });
-    const out = {};
-    if (STANDARD_PRICE_ID) { try { out.standard = await stripe.prices.retrieve(STANDARD_PRICE_ID); } catch (e) { out.standard_error = e.message; } }
-    if (PREMIUM_PRICE_ID)  { try { out.premium  = await stripe.prices.retrieve(PREMIUM_PRICE_ID); }  catch (e) { out.premium_error  = e.message; } }
-    res.json({ ok: true, out });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
-});
-
-// Generate (OpenAI)
+// Generate (OpenAI) — plan aware
 app.post('/generate', rateLimit, async (req, res) => {
   try {
-    let { job, skills, tone = 'Friendly', ctaStyle = 'Book a quick call', variants = 1 } = req.body || {};
+    let { job, skills, tone = 'Friendly', ctaStyle = 'Book a quick call', variants = 1, plan = 'standard' } = req.body || {};
+    plan = String(plan || 'standard').toLowerCase();
+
     job = clampLen(stripTags(String(job||'').trim()), 4000);
     skills = clampLen(stripTags(String(skills||'').trim()), 4000);
 
@@ -112,13 +106,16 @@ app.post('/generate', rateLimit, async (req, res) => {
     if (!skills || skills.length < 20) return res.status(400).json({ error: 'Skills too short (min 20 chars)' });
     if (!OPENAI_API_KEY) return res.status(500).json({ error: 'Missing OPENAI_API_KEY on server' });
 
-    const n = Math.max(1, Math.min(3, parseInt(variants, 10) || 1));
+    const maxVariants = plan === 'premium' ? 5 : 3;
+    const n = Math.max(1, Math.min(maxVariants, parseInt(variants, 10) || 1));
+    const modelToUse = plan === 'premium' && OPENAI_MODEL_PREMIUM ? OPENAI_MODEL_PREMIUM : OPENAI_MODEL;
+
     const prompt = `You are a cold-email assistant. Write ${n} distinct outreach email(s) as JSON.\n\nContext:\n- Job description: ${job}\n- Freelancer skills/services: ${skills}\n- Desired tone: ${tone}\n- CTA style: ${ctaStyle}\n\nReturn ONLY valid JSON exactly like: { "emails": [ { "subject": string, "body": string } ] } with ${n} items.`;
 
     const resp = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: OPENAI_MODEL, messages: [
+      body: JSON.stringify({ model: modelToUse, messages: [
         { role: 'system', content: 'You write professional, high-converting but non-spammy cold emails.' },
         { role: 'user', content: prompt }
       ], temperature: 0.7 })
@@ -130,14 +127,14 @@ app.post('/generate', rateLimit, async (req, res) => {
     const text = data.choices?.[0]?.message?.content || '';
     let parsed = extractJson(text) || { emails: [{ subject: '(no subject)', body: text }] };
     const emails = Array.isArray(parsed.emails) ? parsed.emails : [];
-    return res.json({ emails });
+    return res.json({ emails, model: modelToUse, plan });
   } catch (e) {
     console.error('Generate error:', e);
     res.status(500).json({ error: 'Server error generating emails' });
   }
 });
 
-// Checkout
+// Checkout + Portal (unchanged)
 app.post('/checkout', async (req, res) => {
   try {
     if (!stripe) return res.status(400).json({ error: 'Stripe is not configured on the server' });
@@ -159,7 +156,6 @@ app.post('/checkout', async (req, res) => {
   }
 });
 
-// Customer Portal
 app.post('/portal', async (req, res) => {
   try {
     if (!stripe) return res.status(400).json({ error: 'Stripe is not configured on the server' });
@@ -178,13 +174,11 @@ app.post('/portal', async (req, res) => {
   }
 });
 
-// 404 fallback (after all routes)
+// 404 + 500 fallbacks
 app.use((req, res, next) => {
   if (req.path.startsWith('/generate') || req.path.startsWith('/checkout') || req.path.startsWith('/portal')) return next();
   res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
 });
-
-// Error handler
 app.use((err, req, res, _next) => {
   console.error('Unhandled error:', err);
   if (req.path.startsWith('/generate') || req.path.startsWith('/checkout') || req.path.startsWith('/portal')) {
