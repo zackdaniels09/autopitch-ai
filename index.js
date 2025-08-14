@@ -1,190 +1,251 @@
-
-// index.js — add premium model support + plan-aware variants
 require('dotenv').config();
 const path = require('path');
 const express = require('express');
+const helmet = require('helmet');
+const cors = require('cors');
+const rateLimit = require('express-rate-limit');
+const Stripe = require('stripe');
 const bodyParser = require('body-parser');
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const pino = require('pino');
+const { z } = require('zod');
+const fetch = require('node-fetch'); // Node <18 fallback; remove if Node >=18
 
-// ---- Config ----
-const PORT = process.env.PORT || 3000;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-const OPENAI_MODEL_PREMIUM = process.env.OPENAI_MODEL_PREMIUM || '';
+// --- Env ---
+const env = {
+  NODE_ENV: process.env.NODE_ENV || 'development',
+  PORT: Number(process.env.PORT || 3000),
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+  OPENAI_MODEL: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || '',
+  STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY || '',
+  STANDARD_PRICE_ID: process.env.STANDARD_PRICE_ID || '',
+  PREMIUM_PRICE_ID: process.env.PREMIUM_PRICE_ID || '',
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || '',
+  APP_BASE_URL: process.env.APP_BASE_URL || 'http://localhost:3000',
+  RATE_LIMIT_MAX: Number(process.env.RATE_LIMIT_MAX || 10),
+  RATE_LIMIT_WINDOW_MS: Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000),
+  REQUEST_TIMEOUT_MS: Number(process.env.REQUEST_TIMEOUT_MS || 30_000),
+};
 
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
-const STANDARD_PRICE_ID = process.env.STANDARD_PRICE_ID || '';
-const PREMIUM_PRICE_ID  = process.env.PREMIUM_PRICE_ID  || '';
-const PUBLIC_URL        = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+// Validate critical env; keep non‑blocking but visible.
+const required = ['OPENAI_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_PUBLISHABLE_KEY', 'STANDARD_PRICE_ID', 'PREMIUM_PRICE_ID'];
+const missing = required.filter((k) => !env[k]);
 
-const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '10', 10);
-const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10);
+const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+const log = pino({ level: process.env.LOG_LEVEL || 'info', base: undefined });
 
-// ---- Stripe ----
-let stripe = null;
-if (STRIPE_SECRET_KEY) {
-  try { stripe = require('stripe')(STRIPE_SECRET_KEY); }
-  catch (e) { console.warn('Stripe init failed:', e.message); }
-}
-
-// ---- Utils ----
-function mask(v, keep = 6) { if (!v || typeof v !== 'string') return ''; return v.length > keep + 4 ? v.slice(0, keep) + '…' + v.slice(-4) : v; }
-function stripTags(s = '') { return String(s).replace(/<[^>]*>/g, ''); }
-function clampLen(s = '', max = 4000) { s = String(s); return s.length > max ? s.slice(0, max) : s; }
-function extractJson(text) {
-  if (!text || typeof text !== 'string') return null;
-  const fence = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  const candidate = fence ? fence[1] : text;
-  const s = candidate.indexOf('{');
-  const e = candidate.lastIndexOf('}');
-  if (s !== -1 && e !== -1 && e > s) { try { return JSON.parse(candidate.slice(s, e + 1)); } catch {} }
-  try { return JSON.parse(candidate); } catch {}
-  return null;
-}
-
-// ---- App ----
 const app = express();
-app.use(bodyParser.json({ limit: '8kb' }));
-app.use(express.static(path.join(__dirname, 'public')));
 
-// Pages
-app.get('/success', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'success.html')));
-app.get('/cancel',  (_req, res) => res.sendFile(path.join(__dirname, 'public', 'cancel.html')));
-app.get('/privacy', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
-app.get('/terms',   (_req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
-app.get('/',        (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+// Security & basics
+app.use(helmet());
+app.use(cors({ origin: true, credentials: false }));
 
-// Rate limiter (simple per-IP)
-const buckets = new Map();
-function rateLimit(req, res, next) {
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'ip';
-  const now = Date.now();
-  const rec = buckets.get(ip) || { start: now, hits: 0 };
-  if (now - rec.start > RATE_LIMIT_WINDOW_MS) { rec.start = now; rec.hits = 0; }
-  rec.hits += 1; buckets.set(ip, rec);
-  if (rec.hits > RATE_LIMIT_MAX) {
-    return res.status(429).json({ error: 'Too many requests', rate_limit: { max: RATE_LIMIT_MAX, window_ms: RATE_LIMIT_WINDOW_MS } });
+// Webhook must use raw body BEFORE json parser.
+app.post('/stripe/webhook', bodyParser.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  if (!env.STRIPE_WEBHOOK_SECRET) {
+    // Fail closed when not configured in live; OK in test/dev.
+    log.warn({ path: '/stripe/webhook' }, 'Webhook secret not set; ignoring event');
+    return res.status(200).send('[noop]');
   }
-  next();
-}
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    log.warn({ err: String(err) }, 'Invalid Stripe signature');
+    return res.status(400).send('Invalid signature');
+  }
 
-// Health
-app.get('/health', (_req, res) => {
-  const haveStripe = Boolean(stripe);
-  const checkoutEnabled = haveStripe && Boolean(STANDARD_PRICE_ID || PREMIUM_PRICE_ID);
-  res.json({
-    ok: true,
-    model: OPENAI_MODEL,
-    premium_model_enabled: Boolean(OPENAI_MODEL_PREMIUM),
-    rate_limit: { max: RATE_LIMIT_MAX, window_ms: RATE_LIMIT_WINDOW_MS },
-    checkout_enabled: checkoutEnabled,
-    debug: {
-      stripe_secret_present: Boolean(STRIPE_SECRET_KEY),
-      public_url_present: Boolean(PUBLIC_URL),
-      standard_price_present: Boolean(STANDARD_PRICE_ID),
-      premium_price_present: Boolean(PREMIUM_PRICE_ID),
-    },
-    samples: {
-      STRIPE_SECRET_KEY: mask(STRIPE_SECRET_KEY),
-      STANDARD_PRICE_ID: mask(STANDARD_PRICE_ID,7),
-      PREMIUM_PRICE_ID: mask(PREMIUM_PRICE_ID,7),
-      PUBLIC_URL: PUBLIC_URL
+  // Handle relevant events
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        log.info({ customer: session.customer, id: session.id }, 'Checkout completed');
+        break;
+      }
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
+        const sub = event.data.object;
+        log.info({ id: sub.id, customer: sub.customer, status: sub.status }, `Sub ${event.type}`);
+        break;
+      }
+      default:
+        log.debug({ type: event.type }, 'Unhandled Stripe event');
     }
+    return res.json({ received: true });
+  } catch (err) {
+    log.error({ err: String(err) }, 'Stripe webhook handler error');
+    return res.status(500).send('Webhook error');
+  }
+});
+
+// JSON parser after webhook raw body
+app.use(express.json({ limit: '1mb' }));
+
+// Rate limit ONLY the LLM generation endpoint
+const genLimiter = rateLimit({
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  max: env.RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Health check
+app.get('/health', async (req, res) => {
+  const checkoutEnabled = Boolean(
+    env.STRIPE_SECRET_KEY && env.STRIPE_PUBLISHABLE_KEY && env.STANDARD_PRICE_ID && env.PREMIUM_PRICE_ID
+  );
+  const stripeMode = env.STRIPE_SECRET_KEY.startsWith('sk_live_') ? 'live' : 'test';
+  return res.json({
+    ok: missing.length === 0,
+    missing,
+    model: env.OPENAI_MODEL,
+    stripe_mode: stripeMode,
+    checkout_enabled: checkoutEnabled,
+    rate_limit: { max: env.RATE_LIMIT_MAX, window_ms: env.RATE_LIMIT_WINDOW_MS },
   });
 });
 
-// Generate (OpenAI) — plan aware
-app.post('/generate', rateLimit, async (req, res) => {
+// Validation schemas
+const GenerateSchema = z.object({
+  jobPost: z.string().min(10).max(4000),
+  skills: z.string().min(2).max(1000),
+  tone: z.enum(['neutral', 'friendly', 'formal', 'casual']).default('neutral'),
+  cta: z.enum(['book_call', 'request_reply', 'link_click', 'custom']).default('request_reply'),
+  customCta: z.string().max(200).optional(),
+  variants: z.number().int().min(1).max(3).default(1),
+});
+
+// OpenAI helper
+async function openAIChat({ jobPost, skills, tone, cta, customCta, variants }) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), env.REQUEST_TIMEOUT_MS);
+  const promptCta =
+    cta === 'book_call'
+      ? 'End with a clear ask to book a 15‑min call.'
+      : cta === 'link_click'
+      ? 'End with a concise link click CTA.'
+      : cta === 'custom' && customCta
+      ? `End with this CTA: ${customCta}`
+      : 'End with a short reply ask.';
+
+  const messages = [
+    {
+      role: 'system',
+      content:
+        'You write concise cold outreach emails. 75–140 words. Add 1‑line personalization from the job post. No fluff. Plain text. Use the specified tone.',
+    },
+    {
+      role: 'user',
+      content: [
+        `Job post:\n${jobPost}`,
+        `My skills:\n${skills}`,
+        `Tone: ${tone}`,
+        promptCta,
+      ].join('\n\n'),
+    },
+  ];
+
   try {
-    let { job, skills, tone = 'Friendly', ctaStyle = 'Book a quick call', variants = 1, plan = 'standard' } = req.body || {};
-    plan = String(plan || 'standard').toLowerCase();
-
-    job = clampLen(stripTags(String(job||'').trim()), 4000);
-    skills = clampLen(stripTags(String(skills||'').trim()), 4000);
-
-    if (!job || job.length < 40) return res.status(400).json({ error: 'Job description too short (min 40 chars)' });
-    if (!skills || skills.length < 20) return res.status(400).json({ error: 'Skills too short (min 20 chars)' });
-    if (!OPENAI_API_KEY) return res.status(500).json({ error: 'Missing OPENAI_API_KEY on server' });
-
-    const maxVariants = plan === 'premium' ? 5 : 3;
-    const n = Math.max(1, Math.min(maxVariants, parseInt(variants, 10) || 1));
-    const modelToUse = plan === 'premium' && OPENAI_MODEL_PREMIUM ? OPENAI_MODEL_PREMIUM : OPENAI_MODEL;
-
-    const prompt = `You are a cold-email assistant. Write ${n} distinct outreach email(s) as JSON.\n\nContext:\n- Job description: ${job}\n- Freelancer skills/services: ${skills}\n- Desired tone: ${tone}\n- CTA style: ${ctaStyle}\n\nReturn ONLY valid JSON exactly like: { "emails": [ { "subject": string, "body": string } ] } with ${n} items.`;
-
     const resp = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: modelToUse, messages: [
-        { role: 'system', content: 'You write professional, high-converting but non-spammy cold emails.' },
-        { role: 'user', content: prompt }
-      ], temperature: 0.7 })
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: env.OPENAI_MODEL,
+        messages,
+        n: variants,
+        temperature: 0.7,
+        max_tokens: 400,
+      }),
+      signal: controller.signal,
     });
+    clearTimeout(t);
 
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`OpenAI error ${resp.status}: ${text}`);
+    }
     const data = await resp.json();
-    if (!resp.ok) return res.status(resp.status).json({ error: 'OpenAI request failed', details: data });
+    const emails = (data.choices || []).map((c) => c.message.content.trim());
+    return emails;
+  } catch (err) {
+    // Avoid leaking internals to client
+    log.error({ err: String(err) }, 'OpenAI call failed');
+    throw new Error('Generation failed');
+  }
+}
 
-    const text = data.choices?.[0]?.message?.content || '';
-    let parsed = extractJson(text) || { emails: [{ subject: '(no subject)', body: text }] };
-    const emails = Array.isArray(parsed.emails) ? parsed.emails : [];
-    return res.json({ emails, model: modelToUse, plan });
-  } catch (e) {
-    console.error('Generate error:', e);
-    res.status(500).json({ error: 'Server error generating emails' });
+app.post('/generate', genLimiter, async (req, res) => {
+  const parsed = GenerateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid input', details: parsed.error.flatten() });
+  }
+  try {
+    const emails = await openAIChat(parsed.data);
+    return res.json({ variants: emails });
+  } catch (err) {
+    return res.status(502).json({ error: 'LLM temporarily unavailable' });
   }
 });
 
-// Checkout + Portal (unchanged)
 app.post('/checkout', async (req, res) => {
+  const plan = (req.body && req.body.plan) || 'standard';
+  const priceId = plan === 'premium' ? env.PREMIUM_PRICE_ID : env.STANDARD_PRICE_ID;
+  if (!priceId) return res.status(400).json({ error: 'Unknown plan or missing price id' });
   try {
-    if (!stripe) return res.status(400).json({ error: 'Stripe is not configured on the server' });
-    const plan = String(req.body?.plan || 'standard').toLowerCase();
-    const priceId = plan === 'premium' ? PREMIUM_PRICE_ID : STANDARD_PRICE_ID;
-    if (!priceId) return res.status(400).json({ error: `Price ID not configured for plan: ${plan}` });
-
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${PUBLIC_URL}/success?plan=${encodeURIComponent(plan)}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${PUBLIC_URL}/cancel`
+      success_url: `${env.APP_BASE_URL}/success.html?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${env.APP_BASE_URL}/cancel.html`,
+      allow_promotion_codes: true,
+      customer_creation: 'if_required',
     });
-
-    res.json({ url: session.url });
-  } catch (e) {
-    console.error('Stripe checkout error:', e);
-    res.status(500).json({ error: 'Failed to create checkout session' });
+    return res.json({ url: session.url });
+  } catch (err) {
+    log.error({ err: String(err) }, 'Stripe checkout error');
+    return res.status(500).json({ error: 'Checkout failed' });
   }
 });
 
 app.post('/portal', async (req, res) => {
   try {
-    if (!stripe) return res.status(400).json({ error: 'Stripe is not configured on the server' });
-    const sessionId = String(req.body?.session_id || '').trim();
-    if (!sessionId) return res.status(400).json({ error: 'Missing session_id in request' });
+    let customerId = req.body?.customerId;
 
-    const checkout = await stripe.checkout.sessions.retrieve(sessionId);
-    const customerId = checkout?.customer;
-    if (!customerId) return res.status(400).json({ error: 'No customer found on that checkout session' });
+    // Preferred: pass sessionId from success page to resolve customer
+    if (!customerId && req.body?.sessionId) {
+      const session = await stripe.checkout.sessions.retrieve(req.body.sessionId);
+      customerId = session.customer;
+    }
+    if (!customerId) return res.status(400).json({ error: 'customerId or sessionId required' });
 
-    const portal = await stripe.billingPortal.sessions.create({ customer: customerId, return_url: `${PUBLIC_URL}/` });
-    res.json({ url: portal.url });
-  } catch (e) {
-    console.error('Portal error:', e);
-    res.status(500).json({ error: 'Portal error', details: e.message });
+    const portal = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: env.APP_BASE_URL,
+    });
+    return res.json({ url: portal.url });
+  } catch (err) {
+    log.error({ err: String(err) }, 'Portal creation error');
+    return res.status(500).json({ error: 'Portal failed' });
   }
 });
 
-// 404 + 500 fallbacks
-app.use((req, res, next) => {
-  if (req.path.startsWith('/generate') || req.path.startsWith('/checkout') || req.path.startsWith('/portal')) return next();
-  res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
-});
-app.use((err, req, res, _next) => {
-  console.error('Unhandled error:', err);
-  if (req.path.startsWith('/generate') || req.path.startsWith('/checkout') || req.path.startsWith('/portal')) {
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-  res.status(500).sendFile(path.join(__dirname, 'public', '500.html'));
+// Static assets
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Central error handler
+// (Why) keep sensitive errors off the wire
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  log.error({ err: String(err) }, 'Unhandled error');
+  res.status(500).json({ error: 'Server error' });
 });
 
-app.listen(PORT, () => console.log(`AutoPitch server on http://localhost:${PORT}`));
+app.listen(env.PORT, () => {
+  log.info({ port: env.PORT, env: env.NODE_ENV }, 'AutoPitch server ready');
+});
