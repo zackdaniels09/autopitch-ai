@@ -1,13 +1,10 @@
-// index.js — server with success/cancel/legal pages + Stripe Checkout + Customer Portal
+# FILE: C:\Users\zacka\autopitch-ai\index.js
+// index.js — launch-ready server: OpenAI generate + Stripe checkout/portal + safer input + 404/500
 require('dotenv').config();
-
 const path = require('path');
 const express = require('express');
 const bodyParser = require('body-parser');
-// node-fetch (ESM) loader pattern for CommonJS
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
-
-const app = express();
 
 // ---- Config ----
 const PORT = process.env.PORT || 3000;
@@ -22,7 +19,7 @@ const PUBLIC_URL        = (process.env.PUBLIC_URL || `http://localhost:${PORT}`)
 const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '10', 10);
 const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10);
 
-// ---- Stripe (optional) ----
+// ---- Stripe ----
 let stripe = null;
 if (STRIPE_SECRET_KEY) {
   try { stripe = require('stripe')(STRIPE_SECRET_KEY); }
@@ -30,10 +27,9 @@ if (STRIPE_SECRET_KEY) {
 }
 
 // ---- Utils ----
-function mask(v, keep = 6) {
-  if (!v || typeof v !== 'string') return '';
-  return v.length > keep + 4 ? v.slice(0, keep) + '…' + v.slice(-4) : v;
-}
+function mask(v, keep = 6) { if (!v || typeof v !== 'string') return ''; return v.length > keep + 4 ? v.slice(0, keep) + '…' + v.slice(-4) : v; }
+function stripTags(s = '') { return String(s).replace(/<[^>]*>/g, ''); }
+function clampLen(s = '', max = 4000) { s = String(s); return s.length > max ? s.slice(0, max) : s; }
 function extractJson(text) {
   if (!text || typeof text !== 'string') return null;
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
@@ -45,11 +41,19 @@ function extractJson(text) {
   return null;
 }
 
-// ---- Middleware ----
-app.use(bodyParser.json());
+// ---- App ----
+const app = express();
+app.use(bodyParser.json({ limit: '8kb' })); // guard large payloads
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ---- Simple in-memory rate limiter ----
+// Pages
+app.get('/success', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'success.html')));
+app.get('/cancel',  (_req, res) => res.sendFile(path.join(__dirname, 'public', 'cancel.html')));
+app.get('/privacy', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
+app.get('/terms',   (_req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
+app.get('/',        (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
+// Rate limiter (simple in-memory per-IP)
 const buckets = new Map();
 function rateLimit(req, res, next) {
   const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'ip';
@@ -63,7 +67,7 @@ function rateLimit(req, res, next) {
   next();
 }
 
-// ---- Health + debug ----
+// Health/debug
 app.get('/health', (_req, res) => {
   const haveStripe = Boolean(stripe);
   const checkoutEnabled = haveStripe && Boolean(STANDARD_PRICE_ID || PREMIUM_PRICE_ID);
@@ -97,41 +101,27 @@ app.get('/debug/stripe', async (_req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-// ---- Pages ----
-app.get('/success', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'success.html')));
-app.get('/cancel',  (_req, res) => res.sendFile(path.join(__dirname, 'public', 'cancel.html')));
-app.get('/privacy', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
-app.get('/terms',   (_req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
-
-// ---- Generate (OpenAI) ----
+// Generate (OpenAI)
 app.post('/generate', rateLimit, async (req, res) => {
   try {
-    const { job, skills, tone = 'Friendly', ctaStyle = 'Book a quick call', variants = 1 } = req.body || {};
-    if (!job || !skills) return res.status(400).json({ error: 'Missing job or skills' });
+    let { job, skills, tone = 'Friendly', ctaStyle = 'Book a quick call', variants = 1 } = req.body || {};
+    job = clampLen(stripTags(String(job||'').trim()), 4000);
+    skills = clampLen(stripTags(String(skills||'').trim()), 4000);
+
+    if (!job || job.length < 40) return res.status(400).json({ error: 'Job description too short (min 40 chars)' });
+    if (!skills || skills.length < 20) return res.status(400).json({ error: 'Skills too short (min 20 chars)' });
     if (!OPENAI_API_KEY) return res.status(500).json({ error: 'Missing OPENAI_API_KEY on server' });
 
     const n = Math.max(1, Math.min(3, parseInt(variants, 10) || 1));
-    const prompt = `You are a cold-email assistant. Write ${n} distinct outreach email(s) as JSON.
-
-Context:
-- Job description: ${job}
-- Freelancer skills/services: ${skills}
-- Desired tone: ${tone}
-- CTA style: ${ctaStyle}
-
-Return ONLY valid JSON exactly like: { "emails": [ { "subject": string, "body": string } ] } with ${n} items.`;
+    const prompt = `You are a cold-email assistant. Write ${n} distinct outreach email(s) as JSON.\n\nContext:\n- Job description: ${job}\n- Freelancer skills/services: ${skills}\n- Desired tone: ${tone}\n- CTA style: ${ctaStyle}\n\nReturn ONLY valid JSON exactly like: { "emails": [ { "subject": string, "body": string } ] } with ${n} items.`;
 
     const resp = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        messages: [
-          { role: 'system', content: 'You write professional, high-converting but non-spammy cold emails.' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.7
-      })
+      body: JSON.stringify({ model: OPENAI_MODEL, messages: [
+        { role: 'system', content: 'You write professional, high-converting but non-spammy cold emails.' },
+        { role: 'user', content: prompt }
+      ], temperature: 0.7 })
     });
 
     const data = await resp.json();
@@ -147,7 +137,7 @@ Return ONLY valid JSON exactly like: { "emails": [ { "subject": string, "body": 
   }
 });
 
-// ---- Checkout (Stripe hosted) ----
+// Checkout
 app.post('/checkout', async (req, res) => {
   try {
     if (!stripe) return res.status(400).json({ error: 'Stripe is not configured on the server' });
@@ -169,7 +159,7 @@ app.post('/checkout', async (req, res) => {
   }
 });
 
-// ---- Customer Portal (manage billing) ----
+// Customer Portal
 app.post('/portal', async (req, res) => {
   try {
     if (!stripe) return res.status(400).json({ error: 'Stripe is not configured on the server' });
@@ -180,11 +170,7 @@ app.post('/portal', async (req, res) => {
     const customerId = checkout?.customer;
     if (!customerId) return res.status(400).json({ error: 'No customer found on that checkout session' });
 
-    const portal = await stripe.billingPortal.sessions.create({
-      customer: customerId,
-      return_url: `${PUBLIC_URL}/`
-    });
-
+    const portal = await stripe.billingPortal.sessions.create({ customer: customerId, return_url: `${PUBLIC_URL}/` });
     res.json({ url: portal.url });
   } catch (e) {
     console.error('Portal error:', e);
@@ -192,8 +178,19 @@ app.post('/portal', async (req, res) => {
   }
 });
 
-// ---- Root ----
-app.get('/', (_req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
+// 404 fallback (after all routes)
+app.use((req, res, next) => {
+  if (req.path.startsWith('/generate') || req.path.startsWith('/checkout') || req.path.startsWith('/portal')) return next();
+  res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
+});
 
-// ---- Listen ----
-app.listen(PORT, () => { console.log(`AutoPitch server listening on http://localhost:${PORT}`); });
+// Error handler
+app.use((err, req, res, _next) => {
+  console.error('Unhandled error:', err);
+  if (req.path.startsWith('/generate') || req.path.startsWith('/checkout') || req.path.startsWith('/portal')) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+  res.status(500).sendFile(path.join(__dirname, 'public', '500.html'));
+});
+
+app.listen(PORT, () => console.log(`AutoPitch server on http://localhost:${PORT}`));
