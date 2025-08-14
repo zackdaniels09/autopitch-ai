@@ -1,4 +1,4 @@
-# FILE: C:\Users\zacka\autopitch-ai\index.js
+
 // index.js — add premium model support + plan-aware variants
 require('dotenv').config();
 const path = require('path');
