@@ -1,12 +1,13 @@
-// index.js — extended, portable (Render + Windows)
+// index.js — server with success/cancel/legal pages + Stripe Checkout + Customer Portal
 require('dotenv').config();
 
 const path = require('path');
 const express = require('express');
 const bodyParser = require('body-parser');
-
-// node-fetch ESM loader for CommonJS
+// node-fetch (ESM) loader pattern for CommonJS
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+
+const app = express();
 
 // ---- Config ----
 const PORT = process.env.PORT || 3000;
@@ -39,25 +40,14 @@ function extractJson(text) {
   const candidate = fence ? fence[1] : text;
   const s = candidate.indexOf('{');
   const e = candidate.lastIndexOf('}');
-  if (s !== -1 && e !== -1 && e > s) {
-    try { return JSON.parse(candidate.slice(s, e + 1)); } catch {}
-  }
+  if (s !== -1 && e !== -1 && e > s) { try { return JSON.parse(candidate.slice(s, e + 1)); } catch {} }
   try { return JSON.parse(candidate); } catch {}
   return null;
 }
 
-// ---- Express ----
-const app = express();
+// ---- Middleware ----
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public'))); // serve index.html, success.html, cancel.html
-
-// Success & cancel pages (explicit routes)
-app.get('/success', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'success.html'));
-});
-app.get('/cancel', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'cancel.html'));
-});
+app.use(express.static(path.join(__dirname, 'public')));
 
 // ---- Simple in-memory rate limiter ----
 const buckets = new Map();
@@ -73,7 +63,7 @@ function rateLimit(req, res, next) {
   next();
 }
 
-// ---- Health + Stripe debug ----
+// ---- Health + debug ----
 app.get('/health', (_req, res) => {
   const haveStripe = Boolean(stripe);
   const checkoutEnabled = haveStripe && Boolean(STANDARD_PRICE_ID || PREMIUM_PRICE_ID);
@@ -99,21 +89,19 @@ app.get('/health', (_req, res) => {
 
 app.get('/debug/stripe', async (_req, res) => {
   try {
-    if (!stripe) return res.status(500).json({ ok: false, error: 'Stripe not initialized (missing STRIPE_SECRET_KEY?)' });
+    if (!stripe) return res.status(500).json({ ok: false, error: 'Stripe not initialized' });
     const out = {};
-    if (STANDARD_PRICE_ID) {
-      try { out.standard = await stripe.prices.retrieve(STANDARD_PRICE_ID); }
-      catch (e) { out.standard_error = e.message; }
-    }
-    if (PREMIUM_PRICE_ID) {
-      try { out.premium = await stripe.prices.retrieve(PREMIUM_PRICE_ID); }
-      catch (e) { out.premium_error = e.message; }
-    }
+    if (STANDARD_PRICE_ID) { try { out.standard = await stripe.prices.retrieve(STANDARD_PRICE_ID); } catch (e) { out.standard_error = e.message; } }
+    if (PREMIUM_PRICE_ID)  { try { out.premium  = await stripe.prices.retrieve(PREMIUM_PRICE_ID); }  catch (e) { out.premium_error  = e.message; } }
     res.json({ ok: true, out });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
+
+// ---- Pages ----
+app.get('/success', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'success.html')));
+app.get('/cancel',  (_req, res) => res.sendFile(path.join(__dirname, 'public', 'cancel.html')));
+app.get('/privacy', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
+app.get('/terms',   (_req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
 
 // ---- Generate (OpenAI) ----
 app.post('/generate', rateLimit, async (req, res) => {
@@ -123,7 +111,15 @@ app.post('/generate', rateLimit, async (req, res) => {
     if (!OPENAI_API_KEY) return res.status(500).json({ error: 'Missing OPENAI_API_KEY on server' });
 
     const n = Math.max(1, Math.min(3, parseInt(variants, 10) || 1));
-    const prompt = `You are a cold-email assistant. Write ${n} distinct outreach email(s) as JSON.\n\nContext:\n- Job description: ${job}\n- Freelancer skills/services: ${skills}\n- Desired tone: ${tone}\n- CTA style: ${ctaStyle}\n\nReturn ONLY valid JSON exactly like: { "emails": [ { "subject": string, "body": string } ] } with ${n} items.`;
+    const prompt = `You are a cold-email assistant. Write ${n} distinct outreach email(s) as JSON.
+
+Context:
+- Job description: ${job}
+- Freelancer skills/services: ${skills}
+- Desired tone: ${tone}
+- CTA style: ${ctaStyle}
+
+Return ONLY valid JSON exactly like: { "emails": [ { "subject": string, "body": string } ] } with ${n} items.`;
 
     const resp = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -162,7 +158,7 @@ app.post('/checkout', async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${PUBLIC_URL}/success`,
+      success_url: `${PUBLIC_URL}/success?plan=${encodeURIComponent(plan)}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${PUBLIC_URL}/cancel`
     });
 
@@ -173,12 +169,31 @@ app.post('/checkout', async (req, res) => {
   }
 });
 
-// Root (served by static, but explicit is fine)
-app.get('/', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// ---- Customer Portal (manage billing) ----
+app.post('/portal', async (req, res) => {
+  try {
+    if (!stripe) return res.status(400).json({ error: 'Stripe is not configured on the server' });
+    const sessionId = String(req.body?.session_id || '').trim();
+    if (!sessionId) return res.status(400).json({ error: 'Missing session_id in request' });
+
+    const checkout = await stripe.checkout.sessions.retrieve(sessionId);
+    const customerId = checkout?.customer;
+    if (!customerId) return res.status(400).json({ error: 'No customer found on that checkout session' });
+
+    const portal = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: `${PUBLIC_URL}/`
+    });
+
+    res.json({ url: portal.url });
+  } catch (e) {
+    console.error('Portal error:', e);
+    res.status(500).json({ error: 'Portal error', details: e.message });
+  }
 });
 
+// ---- Root ----
+app.get('/', (_req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
+
 // ---- Listen ----
-app.listen(PORT, () => {
-  console.log(`AutoPitch server listening on http://localhost:${PORT}`);
-});
+app.listen(PORT, () => { console.log(`AutoPitch server listening on http://localhost:${PORT}`); });

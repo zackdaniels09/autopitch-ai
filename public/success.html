@@ -1,4 +1,3 @@
-<!-- FILE: C:\Users\zacka\autopitch-ai\public\success.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -14,13 +13,9 @@
     h1 { margin: 0 0 10px; }
     p { color: var(--muted); margin: 8px 0 0; }
     .actions { display:flex; gap:10px; margin-top:20px; }
-    a.btn {
-      display:inline-block; padding:10px 14px; border-radius:10px; text-decoration:none; font-weight:700;
-      background: var(--brand); color:#0b0f19;
-    }
-    a.btn.secondary {
-      background: transparent; color: var(--text); border:1px solid #2a334b;
-    }
+    a.btn { display:inline-block; padding:10px 14px; border-radius:10px; text-decoration:none; font-weight:700; background: var(--brand); color:#0b0f19; }
+    a.btn.secondary { background: transparent; color: var(--text); border:1px solid #2a334b; }
+    .hide { display:none; }
   </style>
 </head>
 <body>
@@ -30,25 +25,36 @@
       <p id="plan" class="muted">Thanks for upgrading! Your subscription is active.</p>
       <div class="actions">
         <a class="btn" href="/">Return to AutoPitch AI</a>
-        <a id="manage" class="btn secondary" href="#" rel="noopener">Manage Billing</a>
+        <a id="manage" class="btn secondary hide" href="#" rel="noopener">Manage Billing</a>
       </div>
+      <p id="hint" class="muted hide">No session id was provided. If you just paid and don't see the Manage button, try again from a fresh checkout link or contact support.</p>
     </div>
+    <footer style="margin-top:24px; text-align:center; color:#9aa4b2">
+      <a href="/terms" style="color:inherit; text-decoration:none">Terms</a> •
+      <a href="/privacy" style="color:inherit; text-decoration:none">Privacy</a>
+    </footer>
   </div>
   <script>
-    // Optional: show plan from URL and open Stripe Customer Portal using session_id
     const p = new URLSearchParams(location.search);
     const plan = p.get('plan');
     if (plan) document.getElementById('plan').textContent = `Your plan: ${plan}. You now have unlimited generations.`;
     const sid = p.get('session_id');
-    document.getElementById('manage').onclick = async (e) => {
-      e.preventDefault();
-      try {
-        const r = await fetch('/portal', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ session_id: sid }) });
-        const j = await r.json();
-        if (j?.url) { location.href = j.url; return; }
-        alert(j?.error || 'Unable to open billing portal.');
-      } catch (err) { alert('Portal error: ' + err.message); }
-    };
+    const manageBtn = document.getElementById('manage');
+    const hint = document.getElementById('hint');
+    if (sid) {
+      manageBtn.classList.remove('hide');
+      manageBtn.onclick = async (e) => {
+        e.preventDefault();
+        try {
+          const r = await fetch('/portal', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ session_id: sid }) });
+          const j = await r.json();
+          if (j?.url) { location.href = j.url; return; }
+          alert(j?.error || 'Unable to open billing portal.');
+        } catch (err) { alert('Portal error: ' + err.message); }
+      };
+    } else {
+      hint.classList.remove('hide');
+    }
   </script>
 </body>
 </html>
