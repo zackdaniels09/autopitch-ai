@@ -1,312 +1,257 @@
-
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AutoPitch AI — Cold Outreach Email Generator</title>
-    <meta name="description" content="Generate persuasive cold outreach emails in seconds. Choose tone, CTA, and export to CSV." />
-    <meta property="og:title" content="AutoPitch AI" />
-    <meta property="og:description" content="Generate persuasive cold outreach emails in seconds." />
-    <meta property="og:type" content="website" />
-    <meta property="og:image" content="/favicon.ico" />
-    <link rel="icon" href="/favicon.ico" />
-    <script src="https://js.stripe.com/v3/"></script>
-    <style>
-      :root { --bg:#0b0f19; --card:#121725; --text:#eef1f6; --muted:#9aa4b2; --brand:#6aa6ff; --warn:#ffb86b; --error:#ff6b6b; }
-      * { box-sizing: border-box; }
-      body { background: var(--bg); color: var(--text); font-family: system-ui, Arial, sans-serif; }
-      .wrap { max-width: 1100px; margin: 32px auto; padding: 0 16px; }
-      header { display:flex; align-items:center; justify-content:space-between; margin: 12px 0 24px; }
-      .logo { display:flex; align-items:center; gap:10px; font-weight:700; }
-      .logo .dot { width:12px; height:12px; border-radius:50%; background: var(--brand); display:inline-block; }
-      .grid2 { display:grid; grid-template-columns: 2fr 1fr; gap: 16px; }
-      .card { background: var(--card); border: 1px solid #222940; border-radius: 14px; padding: 16px; }
-      textarea, select, button, input { width: 100%; font-size: 16px; color: var(--text); }
-      textarea, select, input { background: #0e1322; border:1px solid #2a334b; border-radius: 10px; padding: 10px; }
-      textarea { height: 140px; }
-      label { display:block; margin: 8px 0 6px; font-weight:600; }
-      .row { margin: 12px 0; }
-      .grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-      .btn { background: var(--brand); border: none; border-radius: 10px; padding: 12px; font-weight:700; cursor:pointer; }
-      .btn.warn { background: var(--warn); color: #1a1a1a; }
-      .btn:disabled { filter: grayscale(0.6); opacity: 0.7; cursor:not-allowed; }
-      .muted { color: var(--muted); font-size: 14px; }
-      .results { display:grid; gap: 12px; margin-top: 16px; }
-      .email { background: #0e1322; border:1px solid #2a334b; border-radius: 12px; padding: 12px; }
-      .email h3 { margin:0 0 8px; font-size: 16px; }
-      .actions { display:flex; gap:8px; margin-top:8px; flex-wrap: wrap; }
-      .actions button { flex:1; min-width: 140px; }
-      .toolbar { display:flex; gap:8px; margin-top:12px; }
-      .toolbar button { flex: 1; }
-      .templates { display:grid; gap:8px; max-height: 520px; overflow:auto; }
-      .tmpl { background:#0e1322; border:1px solid #2a334b; border-radius:10px; padding:10px; }
-      .tmpl h4 { margin:0 0 6px; font-size: 15px; }
-      .tmpl .small { color: var(--muted); font-size: 12px; }
-      .tmpl .rowbtn { display:flex; gap:8px; margin-top:8px; }
-      .paywall { background:#0e1322; border:1px dashed #2a334b; border-radius:10px; padding:12px; margin-top:12px; }
-      .plans { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
-      .features { margin-top:10px; display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
-      .feat { background:#0e1322; border:1px solid #2a334b; border-radius:10px; padding:10px; }
-      .feat h4 { margin:0 0 6px; font-size:14px; color:#cfd6e4; }
-      .feat ul { margin:0; padding-left:18px; color: var(--muted); font-size:14px; }
-      .paywall-mobile { display:none; margin-top:16px; }
-      .hint { color: var(--error); font-size: 12px; margin-top:6px; display:none; }
-      .hint.show { display:block; }
-      .error { border-color: var(--error) !important; }
-      @media (max-width: 960px) { .grid2 { grid-template-columns: 1fr; } .paywall-mobile { display:block; } }
-      footer { margin:24px 0; text-align:center; color:#9aa4b2; }
-      footer a { color:inherit; text-decoration:none; }
-      #toast { position: fixed; right: 20px; bottom: 20px; background: #222940; color: var(--text); padding: 10px 14px; border-radius: 10px; border:1px solid #2a334b; opacity: 0; transform: translateY(10px); transition: opacity .2s ease, transform .2s ease; pointer-events: none; z-index: 9999; }
-      #toast.show { opacity: 1; transform: translateY(0); }
-      .faq { margin-top:16px; }
-      .faq h3 { margin: 0 0 8px; }
-      .faq .q { margin:6px 0; color:#cfd6e4; }
-      .faq .a { margin:0 0 10px; color: var(--muted); }
-      .planTag { font-size: 12px; color:#9aa4b2; }
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <header>
-        <div class="logo"><span class="dot"></span> AutoPitch AI</div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AutoPitch AI</title>
+  <style>
+    :root { --bg:#0b1020; --card:#11162a; --muted:#a3acc0; --text:#e8ecf5; --accent:#6d7cff; --border:#1e2742; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background: linear-gradient(180deg,#090e1d, #0d1430); color: var(--text); }
+    header { padding: 18px 20px; border-bottom: 1px solid var(--border); position: sticky; top:0; z-index: 40; backdrop-filter: blur(6px); background: rgba(9,14,29,.72); }
+    header .row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    header h1 { font-size: 18px; margin:0; letter-spacing:.2px; }
+    header .right { display:flex; align-items:center; gap:10px; color: var(--muted); font-size: 12px; }
+
+    main { padding: 24px 20px 110px; max-width: 1100px; margin: 0 auto; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .card { background: var(--card); border:1px solid var(--border); border-radius: 14px; padding: 14px; }
+    .card h3 { margin: 0 0 10px; font-size: 14px; color:#cfd5e6; }
+
+    textarea, select, input, button { width:100%; border-radius: 10px; border:1px solid var(--border); background:#0c1330; color: var(--text); padding:10px 12px; font-size:14px; }
+    textarea { min-height: 180px; resize: vertical; }
+    select, input { background:#0f173a; }
+    label { display:block; font-size:12px; color:var(--muted); margin: 8px 0 6px; }
+
+    .controls { display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .actions { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
+    .btn { cursor: pointer; font-weight: 600; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.ghost { background: transparent; }
+
+    .muted { color: var(--muted); }
+    .small { font-size: 12px; }
+
+    .results { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 14px; }
+    .email { white-space: pre-wrap; line-height: 1.4; font-size: 14px; background:#0b1330; border:1px dashed #263056; border-radius: 12px; padding: 12px; }
+    .email .top { display:flex; justify-content: space-between; align-items:center; margin-bottom: 8px; }
+
+    /* Sticky purchase bar */
+    .purchase-bar { position: fixed; left:0; right:0; bottom:0; z-index: 50; background: linear-gradient(180deg, rgba(9,14,29,.86), rgba(9,14,29,.98)); border-top: 1px solid var(--border); padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .purchase-wrap { width:100%; max-width:1100px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .purchase-label { display:flex; flex-direction:column; }
+    .purchase-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .btn.inline { width: auto; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border); background: #0f173a; color:#e7ebf6; }
+    .btn.inline.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    @media (max-width: 1100px) { .purchase-wrap { padding-right: 80px; } }
+    @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } .results { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <h1>AutoPitch AI</h1>
+    <div class="right small">
+      <span id="modelLabel">Model: gpt-4o-mini</span>
+      <span>•</span>
+      <span id="freeCounter">Free uses left: <strong id="freeLeft">—</strong></span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="grid">
+    <section class="card">
+      <h3>Inputs</h3>
+      <label for="jobPost">Job post</label>
+      <textarea id="jobPost" placeholder="Paste the job description..."></textarea>
+
+      <label for="skills">Your skills</label>
+      <textarea id="skills" placeholder="e.g., Python, FastAPI, customer onboarding, SDR experience"></textarea>
+
+      <div class="controls" style="margin-top:8px;">
         <div>
-          <div class="planTag" id="planTag">Plan: Standard</div>
-          <div class="muted" id="limits">Rate limit: —</div>
+          <label for="tone">Tone</label>
+          <select id="tone">
+            <option value="neutral">Neutral</option>
+            <option value="friendly">Friendly</option>
+            <option value="formal">Formal</option>
+            <option value="casual">Casual</option>
+          </select>
         </div>
-      </header>
-
-      <div class="grid2">
-        <div class="card">
-          <p class="muted">Paste the job, your skills, choose tone + CTA, and how many variants to generate.</p>
-
-          <div class="row">
-            <label for="job">Job description</label>
-            <textarea id="job" placeholder="Paste the client post or job details here..."></textarea>
-            <div id="jobHint" class="hint"></div>
-          </div>
-
-          <div class="row">
-            <label for="skills">Your skills/services</label>
-            <textarea id="skills" placeholder="Describe your services and strengths..."></textarea>
-            <div id="skillsHint" class="hint"></div>
-          </div>
-
-          <div class="row grid">
-            <div>
-              <label for="tone">Tone</label>
-              <select id="tone">
-                <option>Friendly</option>
-                <option>Formal</option>
-                <option>Bold & Direct</option>
-                <option>Conversational</option>
-                <option>Persuasive</option>
-              </select>
-            </div>
-            <div>
-              <label for="cta">CTA style</label>
-              <select id="cta">
-                <option>Book a quick call</option>
-                <option>Reply with details</option>
-                <option>Get a free audit</option>
-                <option>Schedule a demo</option>
-                <option>Start with a trial</option>
-              </select>
-            </div>
-            <div>
-              <label for="variants">Variants</label>
-              <select id="variants">
-                <option value="1">1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5">5</option>
-              </select>
-              <div class="muted" style="font-size:12px; margin-top:6px">Standard: up to 3 per run • Premium: up to 5</div>
-            </div>
-          </div>
-
-          <div class="row">
-            <button class="btn" id="go">Generate Emails</button>
-          </div>
-
-          <div id="status" class="muted"></div>
-          <div class="toolbar" id="toolbar" style="display:none">
-            <button class="btn" id="copyAll">Copy all</button>
-            <button class="btn" id="downloadCsv">Download CSV</button>
-          </div>
-
-          <div class="results" id="results"></div>
-
-          <!-- Mobile pricing duplication (visible under editor on small screens) -->
-          <div class="paywall-mobile" id="paywallMobile">
-            <div class="paywall">
-              <strong>Upgrade for more power</strong>
-              <p class="muted">Premium uses a higher‑quality model and larger limits.</p>
-              <div class="plans">
-                <button class="btn" id="buyStdMobile">Standard – $19/mo</button>
-                <button class="btn" id="buyProMobile">Premium – $39/mo</button>
-              </div>
-              <div class="features">
-                <div class="feat">
-                  <h4>Standard includes</h4>
-                  <ul>
-                    <li>Fair‑use: up to 300/mo</li>
-                    <li>Tone & CTA controls</li>
-                    <li>Save, copy, CSV export</li>
-                    <li>Templates library</li>
-                  </ul>
-                </div>
-                <div class="feat">
-                  <h4>Premium adds</h4>
-                  <ul>
-                    <li>Higher‑quality model</li>
-                    <li>Fair‑use: up to 1,500/mo</li>
-                    <li>Priority rate limits</li>
-                    <li>Priority support</li>
-                  </ul>
-                </div>
-              </div>
-              <p class="muted" style="margin-top:8px">7‑day refund guarantee.</p>
-            </div>
-          </div>
+        <div>
+          <label for="cta">Call to action</label>
+          <select id="cta">
+            <option value="request_reply">Request reply</option>
+            <option value="book_call">Book call</option>
+            <option value="link_click">Click link</option>
+            <option value="custom">Custom</option>
+          </select>
         </div>
-
-        <aside class="card">
-          <h3 style="margin-top:0">Saved Templates</h3>
-          <p class="muted">Click Save on any result to store it here.</p>
-          <div class="templates" id="templates"></div>
-          <div class="row" style="display:flex; gap:8px">
-            <button class="btn" id="exportAll">Export all (.csv)</button>
-            <button class="btn warn" id="clearAll">Clear all</button>
-          </div>
-
-          <!-- Sidebar pricing (hidden if already premium) -->
-          <div class="paywall" id="paywall">
-            <strong>Upgrade for more power</strong>
-            <p class="muted">Premium uses a higher‑quality model and larger limits.</p>
-            <div class="plans">
-              <button class="btn" id="buyStd">Standard – $19/mo</button>
-              <button class="btn" id="buyPro">Premium – $39/mo</button>
-            </div>
-            <div class="features">
-              <div class="feat">
-                <h4>Standard includes</h4>
-                <ul>
-                  <li>Fair‑use: up to 300/mo</li>
-                  <li>Tone & CTA controls</li>
-                  <li>Save, copy, CSV export</li>
-                  <li>Templates library</li>
-                </ul>
-              </div>
-              <div class="feat">
-                <h4>Premium adds</h4>
-                <ul>
-                  <li>Higher‑quality model</li>
-                  <li>Fair‑use: up to 1,500/mo</li>
-                  <li>Priority rate limits</li>
-                  <li>Priority support</li>
-                </ul>
-              </div>
-            </div>
-            <p class="muted" style="margin-top:8px">7‑day refund guarantee.</p>
-          </div>
-
-          <div class="faq">
-            <h3>FAQ</h3>
-            <div class="q">Can I cancel anytime?</div>
-            <div class="a">Yes. Manage your subscription from the billing portal after purchase.</div>
-            <div class="q">Do you offer refunds?</div>
-            <div class="a">We offer a 7‑day refund window if you’re not happy. Email support.</div>
-            <div class="q">Is my data safe?</div>
-            <div class="a">We only store what’s needed to run the app. See the Privacy page.</div>
-          </div>
-        </aside>
+        <div>
+          <label for="customCta">Custom CTA</label>
+          <input id="customCta" placeholder="e.g., Can we partner for 2 weeks?" disabled />
+        </div>
+        <div>
+          <label for="variants">Variants</label>
+          <select id="variants">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+          <div class="small muted">Server may limit free users to 1</div>
+        </div>
       </div>
 
-      <footer>
-        <a href="mailto:wirelesssolution24@gmail.com">Contact support</a> •
-        <a href="/terms">Terms</a> • <a href="/privacy">Privacy</a>
-      </footer>
+      <div class="actions" style="margin-top:12px;">
+        <button id="btnGenerate" class="btn primary">Generate emails</button>
+        <button id="btnExport" class="btn ghost">Export CSV</button>
+        <span id="lastCost" class="small muted"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Results</h3>
+      <div id="results" class="results"></div>
+      <div id="emptyState" class="muted small">Generated emails will appear here. Use the copy buttons or export to CSV.</div>
+    </section>
+  </div>
+</main>
+
+<!-- Sticky purchase / billing bar (single instance for all viewports) -->
+<div class="purchase-bar" role="region" aria-label="Upgrade bar">
+  <div class="purchase-wrap">
+    <div class="purchase-label">
+      <strong>Upgrade</strong>
+      <span class="muted small">Standard for limits • Premium for unlimited & priority</span>
     </div>
+    <div class="purchase-actions">
+      <button class="btn inline" id="btn-standard">Standard — $19.99/mo</button>
+      <button class="btn inline primary" id="btn-premium">Premium — $39.99/mo</button>
+      <button class="btn inline" id="btn-portal" title="Manage billing">Manage billing</button>
+    </div>
+  </div>
+</div>
 
-    <div id="toast" role="status" aria-live="polite"></div>
+<script>
+  // ==== Friendly toast + UI free cap (server is source of truth)
+  const MAX_FREE = 5;
+  function showToast(msg){
+    let t = document.getElementById('toast');
+    if(!t){
+      t = document.createElement('div');
+      t.id='toast';
+      t.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:76px;background:#11162a;border:1px solid #1e2742;color:#e8ecf5;padding:10px 14px;border-radius:10px;z-index:60;box-shadow:0 10px 20px rgba(0,0,0,.25)';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg; t.style.display='block';
+    clearTimeout(window.__toastT); window.__toastT=setTimeout(()=>{t.style.display='none';}, 4000);
+  }
 
-    <script>
-      const $ = (id) => document.getElementById(id);
-      const go = $('go'), results = $('results'), statusEl = $('status'), limitsEl = $('limits');
-      const toolbar = $('toolbar'), copyAllBtn = $('copyAll'), downloadCsvBtn = $('downloadCsv');
-      const tmplList = $('templates'), exportAllBtn = $('exportAll'), clearAllBtn = $('clearAll');
-      const paywall = $('paywall'), paywallMobile = $('paywallMobile'), planTag = $('planTag');
-      const buyStdBtn = $('buyStd'), buyProBtn = $('buyPro');
-      const buyStdMobile = $('buyStdMobile'), buyProMobile = $('buyProMobile');
+  // ==== Element refs
+  const $ = (id) => document.getElementById(id);
+  const jobPost = $('jobPost');
+  const skills = $('skills');
+  const tone = $('tone');
+  const cta = $('cta');
+  const customCta = $('customCta');
+  const variantsEl = $('variants');
+  const btnGenerate = $('btnGenerate');
+  const btnExport = $('btnExport');
+  const results = $('results');
+  const emptyState = $('emptyState');
+  const freeLeftEl = $('freeLeft');
+  const modelLabel = $('modelLabel');
 
-      const FREE_MODE_MAX = 10; // UI soft cap remains
-      const MIN_JOB = 40, MIN_SKILLS = 20;
+  // ==== Client-side free counter (UX hint only)
+  function getFreeUses(){ return Number(localStorage.getItem('ap_free') || '0'); }
+  function incFreeUses(){ const n=getFreeUses()+1; localStorage.setItem('ap_free', String(n)); updateFreeLeft(); }
+  function updateFreeLeft(){ const left = Math.max(0, MAX_FREE - getFreeUses()); freeLeftEl.textContent = left; }
+  updateFreeLeft();
 
-      let freeCount = parseInt(localStorage.getItem('ap_free_count')||'0',10);
-      let lastEmails = [];
-      let checkoutEnabled = false;
-      let toastTimer = null;
-      let lastSnapshot = { tone: '', cta: '', job: '', skills: '' };
-      let plan = (localStorage.getItem('ap_plan') || 'standard').toLowerCase();
+  // Toggle custom CTA field
+  cta.addEventListener('change', () => {
+    const enable = cta.value === 'custom';
+    customCta.disabled = !enable; if (!enable) customCta.value = '';
+  });
 
-      function showToast(msg) { const t = $('toast'); if (!t) return; t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(()=> t.classList.remove('show'), 1600); }
-      function updatePlanTag() { planTag.textContent = `Plan: ${plan.charAt(0).toUpperCase()+plan.slice(1)}`; }
+  // Render results
+  function renderResults(list){
+    results.innerHTML='';
+    if(!list || !list.length){ emptyState.style.display='block'; return; }
+    emptyState.style.display='none';
+    list.forEach((text, i)=>{
+      const wrap=document.createElement('div'); wrap.className='email';
+      const top=document.createElement('div'); top.className='top';
+      const h=document.createElement('div'); h.textContent=`Variant ${i+1}`;
+      const copy=document.createElement('button'); copy.className='btn inline'; copy.textContent='Copy';
+      copy.addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(text); copy.textContent='Copied!'; setTimeout(()=>copy.textContent='Copy', 1200);}catch{} });
+      top.append(h, copy);
+      const pre=document.createElement('div'); pre.textContent=text;
+      wrap.append(top, pre);
+      results.append(wrap);
+    });
+  }
 
-      function emailText(e) { return `Subject: ${e.subject}\n\n${e.body}`; }
-      function openGmail(subject, body) { const u = `https://mail.google.com/mail/?view=cm&fs=1&to=&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`; window.open(u, '_blank'); }
-      function openOutlook(subject, body) { const u = `https://outlook.office.com/mail/deeplink/compose?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`; window.open(u, '_blank'); }
-      function copyToClipboard(text, btn) { navigator.clipboard.writeText(text).then(() => { const old = btn.textContent; btn.textContent = 'Copied!'; showToast('Copied to clipboard'); setTimeout(() => btn.textContent = old, 1200); }).catch(() => alert('Copy failed')); }
-      function toCsv(rows, meta) { const esc = (s='') => `"${String(s).replace(/"/g,'""')}"`; const header = ['subject','body','tone','cta','job','skills','plan']; const lines = [header.map(esc).join(',')]; rows.forEach(r => lines.push([esc(r.subject), esc(r.body), esc(meta.tone), esc(meta.cta), esc(meta.job), esc(meta.skills), esc(plan)].join(','))); return lines.join('\r\n'); }
-      function download(name, mime, data) { const blob = new Blob([data], { type: mime }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url); }
+  // Export CSV
+  btnExport.addEventListener('click', ()=>{
+    const emails = Array.from(results.querySelectorAll('.email div:nth-child(2)')).map(el=>el.textContent||'');
+    if(!emails.length) return alert('Nothing to export');
+    const rows = [['variant','email']].concat(emails.map((e,i)=>[String(i+1), e.replace(/\n/g,'\\n')]));
+    const csv = rows.map(r=>r.map(v=>`"${v.replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='autopitch_emails.csv'; a.click();
+  });
 
-      function setError(el, hintEl, message) { if (!el || !hintEl) return; el.classList.add('error'); hintEl.textContent = message; hintEl.classList.add('show'); }
-      function clearError(el, hintEl) { if (!el || !hintEl) return; el.classList.remove('error'); hintEl.textContent = ''; hintEl.classList.remove('show'); }
-      function validateFields() { const job = $('job'); const jobHint = $('jobHint'); const skills = $('skills'); const skillsHint = $('skillsHint'); let ok = true; clearError(job, jobHint); clearError(skills, skillsHint); if (!job.value.trim() || job.value.trim().length < MIN_JOB) { setError(job, jobHint, `Add more detail (min ${MIN_JOB} characters)`); ok = false; } if (!skills.value.trim() || skills.value.trim().length < MIN_SKILLS) { setError(skills, skillsHint, `Add more detail (min ${MIN_SKILLS} characters)`); ok = false; } return ok; }
+  // Generate handler
+  btnGenerate.addEventListener('click', async ()=>{
+    const body = {
+      jobPost: jobPost.value.trim(),
+      skills: skills.value.trim(),
+      tone: tone.value,
+      cta: cta.value,
+      customCta: cta.value==='custom' ? customCta.value.trim() : undefined,
+      variants: Number(variantsEl.value),
+      debugCost: true,
+    };
+    if(body.jobPost.length<10) return alert('Add a job post');
+    if(body.skills.length<2) return alert('Add your skills');
 
-      $('job').addEventListener('input', () => { if ($('job').classList.contains('error')) validateFields(); });
-      $('skills').addEventListener('input', () => { if ($('skills').classList.contains('error')) validateFields(); });
+    btnGenerate.disabled=true; const old=btnGenerate.textContent; btnGenerate.textContent='Generating…';
+    try{
+      const res = await fetch('/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      if(res.status===402){ const j = await res.json().catch(()=>({})); showToast(j.message || `You’ve hit today’s free limit (${MAX_FREE}). Upgrade to continue.`); return; }
+      if(!res.ok){ const t=await res.text(); throw new Error(t||'Failed'); }
+      const cost = res.headers.get('X-Estimated-Cost-USD');
+      const data = await res.json();
+      renderResults(data.variants||[]);
+      if(cost){ document.getElementById('lastCost').textContent = `Cost est: $${Number(cost).toFixed(4)}`; }
+      incFreeUses();
+    }catch(e){ alert('Generation failed. Try again.'); }
+    finally{ btnGenerate.disabled=false; btnGenerate.textContent=old; }
+  });
 
-      function loadTemplates() { const arr = JSON.parse(localStorage.getItem('ap_templates')||'[]'); tmplList.innerHTML = ''; if (!arr.length) { tmplList.innerHTML = '<div class="muted">No saved templates yet.</div>'; return; } arr.forEach((t, i) => { const div = document.createElement('div'); div.className = 'tmpl'; div.innerHTML = `<h4>${t.subject||'(no subject)'}</h4><div class="small">Saved ${new Date(t.saved_at||Date.now()).toLocaleString()}</div><div style="margin-top:8px">${(t.body||'').replace(/\n/g,'<br>')}</div>`; const rowbtn = document.createElement('div'); rowbtn.className = 'rowbtn'; const copyBtn = document.createElement('button'); copyBtn.className='btn'; copyBtn.textContent='Copy'; copyBtn.onclick = () => copyToClipboard(emailText(t), copyBtn); const dlBtn = document.createElement('button'); dlBtn.className='btn'; dlBtn.textContent='Download .txt'; dlBtn.onclick = () => { download((t.subject||'email').replace(/[\\\/:*?"<>|]+/g,'_') + '.txt', 'text/plain', emailText(t)); showToast('Template downloaded'); }; const delBtn = document.createElement('button'); delBtn.className='btn warn'; delBtn.textContent='Delete'; delBtn.onclick = () => { const arr2 = JSON.parse(localStorage.getItem('ap_templates')||'[]'); arr2.splice(i,1); localStorage.setItem('ap_templates', JSON.stringify(arr2)); loadTemplates(); showToast('Template deleted'); }; rowbtn.appendChild(copyBtn); rowbtn.appendChild(dlBtn); rowbtn.appendChild(delBtn); div.appendChild(rowbtn); tmplList.appendChild(div); }); }
+  // Checkout / Portal
+  async function startCheckout(plan){
+    try{
+      const r = await fetch('/checkout',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ plan }) });
+      const j = await r.json(); if(j?.url) location.href = j.url; else alert(j?.error||'Checkout failed');
+    }catch{ alert('Network error starting checkout'); }
+  }
+  async function openPortal(){
+    try{
+      const params = new URLSearchParams(location.search); const sessionId = params.get('session_id');
+      const r = await fetch('/portal',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(sessionId?{sessionId}:{}) });
+      const j = await r.json(); if(j?.url) location.href=j.url; else alert(j?.error||'Could not open billing portal');
+    }catch{ alert('Network error'); }
+  }
+  document.getElementById('btn-standard').addEventListener('click', ()=> startCheckout('standard'));
+  document.getElementById('btn-premium').addEventListener('click', ()=> startCheckout('premium'));
+  document.getElementById('btn-portal').addEventListener('click', openPortal);
 
-      function saveTemplate(e) { const arr = JSON.parse(localStorage.getItem('ap_templates')||'[]'); arr.unshift({ subject: e.subject||'', body: e.body||'', saved_at: Date.now() }); localStorage.setItem('ap_templates', JSON.stringify(arr.slice(0,200))); loadTemplates(); showToast('Saved to Templates'); }
-
-      copyAllBtn.onclick = () => { const text = lastEmails.map(emailText).join('\n\n---\n\n'); copyToClipboard(text, copyAllBtn); };
-      downloadCsvBtn.onclick = () => { const csv = toCsv(lastEmails, lastSnapshot); download('autopitch_emails.csv', 'text/csv', csv); showToast('CSV downloaded'); };
-      exportAllBtn.onclick = () => { const arr = JSON.parse(localStorage.getItem('ap_templates')||'[]'); if (!arr.length) return alert('No saved templates.'); const csv = toCsv(arr, lastSnapshot); download('autopitch_templates.csv', 'text/csv', csv); showToast('Templates exported'); };
-      clearAllBtn.onclick = () => { if (confirm('Delete all saved templates?')) { localStorage.removeItem('ap_templates'); loadTemplates(); showToast('All templates cleared'); } };
-
-      async function refreshLimits() { try { const r = await fetch('/health'); const j = await r.json(); if (j?.rate_limit) { limitsEl.textContent = `Rate limit: ${j.rate_limit.max}/${Math.round(j.rate_limit.window_ms/1000)}s` + (j.model ? ` (model: ${j.model})` : ''); } checkoutEnabled = !!j?.checkout_enabled; // Hide paywall if user is already premium
-          if (plan === 'premium') { if (paywall) paywall.style.display = 'none'; if (paywallMobile) paywallMobile.style.display = 'none'; } else { if (checkoutEnabled) { if (paywall) paywall.style.display = 'block'; if (paywallMobile) paywallMobile.style.display = 'block'; } else { if (paywall) paywall.style.display = 'none'; if (paywallMobile) paywallMobile.style.display = 'none'; } } } catch {} }
-
-      async function startCheckout(planChoice) { try { const r = await fetch('/checkout', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ plan: planChoice }) }); const j = await r.json(); if (j?.url) { showToast('Redirecting to Stripe…'); window.location.href = j.url; return; } alert(j?.error || 'Checkout not available.'); } catch (e) { alert('Checkout error: ' + e.message); } }
-
-      function showCountdown(ms) { let left = Math.max(1000, parseInt(ms,10)||60000); const step = () => { const sec = Math.ceil(left/1000); statusEl.textContent = `Rate limited — try again in ${sec}s`; if (left <= 0) { statusEl.textContent = ''; return; } left -= 1000; setTimeout(step, 1000); }; step(); }
-
-      async function generate() {
-        if (!validateFields()) return;
-        const job = $('job').value.trim(); const skills = $('skills').value.trim();
-        const tone = $('tone').value.trim(); const ctaStyle = $('cta').value.trim();
-        const variants = parseInt($('variants').value, 10) || 1; lastSnapshot = { tone, cta: ctaStyle, job, skills };
-        statusEl.textContent = 'Generating...'; results.innerHTML = ''; toolbar.style.display = 'none'; go.disabled = true; lastEmails = [];
-        try {
-          const res = await fetch('/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job, skills, tone, ctaStyle, variants, plan }) });
-          const data = await res.json(); if (res.status === 429) { showCountdown((data?.rate_limit?.window_ms)||60000); return; } if (!res.ok) { statusEl.textContent = 'Error: ' + (data?.error || res.status); console.error(data); return; }
-          const emails = Array.isArray(data.emails) ? data.emails : []; if (!emails.length) { statusEl.textContent = 'No emails returned. Try again.'; return; }
-          lastEmails = emails; statusEl.textContent = `Generated ${emails.length} variant(s).`; showToast(`Generated ${emails.length} variant(s)`); toolbar.style.display = 'flex';
-          emails.forEach((e, i) => { const card = document.createElement('div'); card.className = 'email'; card.innerHTML = `<h3>Variant ${i+1}: ${e.subject || '(no subject)'}</h3><div>${(e.body || '').replace(/\n/g, '<br>')}</div>`; const actions = document.createElement('div'); actions.className = 'actions'; const copyBtn = document.createElement('button'); copyBtn.className = 'btn'; copyBtn.textContent = 'Copy'; copyBtn.onclick = () => copyToClipboard(emailText(e), copyBtn); const dlBtn = document.createElement('button'); dlBtn.className = 'btn'; dlBtn.textContent = 'Download .txt'; dlBtn.onclick = () => { download((e.subject||'email').replace(/[\\\/:*?"<>|]+/g,'_') + '.txt', 'text/plain', emailText(e)); showToast('Email downloaded'); }; const saveBtn = document.createElement('button'); saveBtn.className = 'btn'; saveBtn.textContent = 'Save'; saveBtn.onclick = () => saveTemplate(e); const gmailBtn = document.createElement('button'); gmailBtn.className = 'btn'; gmailBtn.textContent = 'Open in Gmail'; gmailBtn.onclick = () => openGmail(e.subject||'', e.body||''); const outlookBtn = document.createElement('button'); outlookBtn.className = 'btn'; outlookBtn.textContent = 'Open in Outlook'; outlookBtn.onclick = () => openOutlook(e.subject||'', e.body||''); actions.appendChild(copyBtn); actions.appendChild(dlBtn); actions.appendChild(saveBtn); actions.appendChild(gmailBtn); actions.appendChild(outlookBtn); card.appendChild(actions); results.appendChild(card); });
-        } catch (err) { statusEl.textContent = 'Network error: ' + err.message; } finally { go.disabled = false; }
-      }
-
-      go.addEventListener('click', generate);
-      if (buyStdBtn) buyStdBtn.onclick = () => startCheckout('standard');
-      if (buyProBtn) buyProBtn.onclick = () => startCheckout('premium');
-      if (buyStdMobile) buyStdMobile.onclick = () => startCheckout('standard');
-      if (buyProMobile) buyProMobile.onclick = () => startCheckout('premium');
-
-      updatePlanTag();
-      loadTemplates(); refreshLimits();
-    </script>
-  </body>
+  // Health → update model label
+  (async()=>{ try{ const r = await fetch('/health'); const j = await r.json(); if(j?.model) modelLabel.textContent = `Model: ${j.model}`; }catch{} })();
+</script>
+</body>
 </html>
