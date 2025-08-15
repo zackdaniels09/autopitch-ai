@@ -1,9 +1,9 @@
-// file: package.json
 {
   "name": "autopitch-ai",
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": { "node": ">=18 <23" },
   "scripts": {
     "start": "node index.js"
   },
