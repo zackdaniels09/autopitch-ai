@@ -14,7 +14,7 @@ import crypto from 'crypto';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/* ---------- ENV ---------- */
+/* ENV (keep APP_SECRET optional so deploy never bricks) */
 const Env = z.object({
   PORT: z.string().default('3000'),
   OPENAI_API_KEY: z.string(),
@@ -38,14 +38,13 @@ catch (e) { console.error('ENV ERROR:', e?.issues ?? e); process.exit(1); }
 
 const RUNTIME_SECRET = env.APP_SECRET || crypto.randomBytes(48).toString('hex');
 
-/* ---------- clients ---------- */
 const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
 
-/* ---------- app + security ---------- */
 const app = express();
 app.set('trust proxy', true);
 
+/* CORS: only your app origin (and no-origin) */
 const allowList = (env.ALLOWED_ORIGINS
   ? env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
   : [env.APP_BASE_URL]
@@ -58,13 +57,13 @@ app.use(cors({
   credentials: true
 }));
 
+/* Helmet: allow inline <script> so your page JS runs */
 app.use(helmet({
   crossOriginOpenerPolicy: { policy: 'same-origin' },
   contentSecurityPolicy: {
     useDefaults: true,
     directives: {
       "default-src": ["'self'"],
-      // allow INLINE SCRIPTS so index.html JS runs
       "script-src": ["'self'", "'unsafe-inline'", "https://js.stripe.com", "https://challenges.cloudflare.com"],
       "style-src": ["'self'", "'unsafe-inline'"],
       "img-src": ["'self'", "data:"],
@@ -84,40 +83,40 @@ app.use(express.static(path.join(__dirname, 'public'), {
   }
 }));
 
-/* ---------- abuse controls ---------- */
+/* Simple abuse controls */
 const FREE_DAILY_LIMIT = Number(env.FREE_DAILY_LIMIT);
 const CAPTCHA_AFTER = 3;
 
-const burstLimiter = rateLimit({
+app.use(rateLimit({
   windowMs: Number(env.RATE_LIMIT_WINDOW_MS),
   max: Number(env.RATE_LIMIT_MAX),
   standardHeaders: true,
   legacyHeaders: false
-});
-app.use(burstLimiter);
+}));
 
-const dayKey = () => new Date().toISOString().slice(0, 10);
-const usage = new Map();
+const usage = new Map(); // key: `${ip}|YYYY-MM-DD` -> { calls, costCents, limitHits }
 const counters = { totalCalls: 0, limit402: 0 };
+const todayKey = () => new Date().toISOString().slice(0,10);
 
-function isBotUA(ua = '') { ua = ua.toLowerCase(); return !ua || /(bot|spider|crawl|curl|wget|httpclient|python-requests|scrapy)/.test(ua); }
-function isPremium(req) { return req.signedCookies.ap_premium === '1'; }
-function needCaptcha(req) { if (isPremium(req)) return false; const v = usage.get(req.ipKey); return (v?.calls || 0) >= CAPTCHA_AFTER; }
-async function verifyTurnstile(token, ip) {
+function isBotUA(ua=''){ ua=ua.toLowerCase(); return !ua || /(bot|spider|crawl|curl|wget|httpclient|python-requests|scrapy)/.test(ua); }
+function isPremium(req){ return req.signedCookies.ap_premium === '1'; }
+function needCaptcha(req){ if (isPremium(req)) return false; const v=usage.get(req.ipKey); return (v?.calls||0) >= CAPTCHA_AFTER; }
+async function verifyTurnstile(token, ip){
   if (!env.TURNSTILE_SECRET_KEY) return true;
   try {
     const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ secret: env.TURNSTILE_SECRET_KEY, response: token || '', remoteip: ip || '' })
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams({secret:env.TURNSTILE_SECRET_KEY,response:token||'',remoteip:ip||''})
     });
     const j = await r.json(); return !!j.success;
   } catch { return false; }
 }
-app.use((req, res, next) => {
+
+app.use((req,res,next)=>{
   const ip = String(req.headers['cf-connecting-ip'] || req.ip || '');
   req.realIp = ip;
-  req.ipKey = `${ip}|${dayKey()}`;
+  req.ipKey = `${ip}|${todayKey()}`;
   if (req.path === '/generate' && !isPremium(req)) {
     const ua = String(req.headers['user-agent'] || '');
     const al = String(req.headers['accept-language'] || '');
@@ -127,10 +126,10 @@ app.use((req, res, next) => {
   next();
 });
 
-/* ---------- routes ---------- */
-app.get('/health', (req, res) => {
+/* --------- routes --------- */
+app.get('/health', (req,res)=>{
   res.json({
-    ok: true,
+    ok:true,
     model: env.OPENAI_MODEL,
     checkout_enabled: Boolean(env.STANDARD_PRICE_ID && env.PREMIUM_PRICE_ID),
     stripe_mode: env.STRIPE_SECRET_KEY.startsWith('sk_live_') ? 'live' : 'test',
@@ -141,15 +140,15 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.get('/me', (req, res) => res.json({ premium: isPremium(req) }));
+app.get('/me', (req,res)=> res.json({ premium: isPremium(req) }));
 
-app.post('/checkout', async (req, res) => {
-  try {
+/* Fixed subscription Checkout (NO customer_creation) */
+app.post('/checkout', async (req,res)=>{
+  try{
     const { plan } = req.body || {};
     const price = plan === 'premium' ? env.PREMIUM_PRICE_ID : env.STANDARD_PRICE_ID;
-    if (!price) return res.status(400).json({ error: 'bad_plan' });
+    if (!price) return res.status(400).json({ error:'bad_plan' });
 
-    // subscription checkout (NO customer_creation)
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price, quantity: 1 }],
@@ -159,55 +158,56 @@ app.post('/checkout', async (req, res) => {
     });
 
     res.json({ url: session.url });
-  } catch (e) {
+  }catch(e){
     console.error('[checkout] failed:', e?.message);
-    res.status(500).json({ error: 'checkout_failed', message: e?.message });
+    res.status(500).json({ error:'checkout_failed', message:e?.message });
   }
 });
 
-app.post('/portal', async (req, res) => {
-  try {
+app.post('/portal', async (req,res)=>{
+  try{
     const { email } = req.body || {};
     const customers = await stripe.customers.list({ email, limit: 1 });
     const customer = customers.data[0];
-    if (!customer) return res.status(404).json({ error: 'no_customer' });
+    if (!customer) return res.status(404).json({ error:'no_customer' });
     const portal = await stripe.billingPortal.sessions.create({ customer: customer.id, return_url: env.APP_BASE_URL });
     res.json({ url: portal.url });
-  } catch (e) {
+  }catch(e){
     console.error('[portal] failed:', e?.message);
-    res.status(500).json({ error: 'portal_failed' });
+    res.status(500).json({ error:'portal_failed' });
   }
 });
 
-app.post('/claim', async (req, res) => {
-  try {
+app.post('/claim', async (req,res)=>{
+  try{
     const { session_id } = req.body || {};
-    if (!session_id) return res.status(400).json({ error: 'session_id_required' });
+    if (!session_id) return res.status(400).json({ error:'session_id_required' });
     const session = await stripe.checkout.sessions.retrieve(session_id, { expand: ['subscription'] });
-    const active = session?.subscription && ['trialing', 'active', 'past_due'].includes(session.subscription.status);
-    if (!active) return res.status(402).json({ error: 'no_active_subscription' });
-    res.cookie('ap_premium', '1', { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 30*24*3600*1000, signed: true });
-    res.json({ premium: true });
-  } catch (e) {
+    const active = session?.subscription && ['trialing','active','past_due'].includes(session.subscription.status);
+    if (!active) return res.status(402).json({ error:'no_active_subscription' });
+
+    res.cookie('ap_premium','1',{ httpOnly:true, secure:true, sameSite:'lax', maxAge:30*24*3600*1000, signed:true });
+    res.json({ premium:true });
+  }catch(e){
     console.error('[claim] failed:', e?.message);
-    res.status(500).json({ error: 'claim_failed' });
+    res.status(500).json({ error:'claim_failed' });
   }
 });
 
-app.post('/generate', async (req, res) => {
+app.post('/generate', async (req,res)=>{
   counters.totalCalls++;
-  const entry = usage.get(req.ipKey) || { calls: 0, costCents: 0, limitHits: 0 };
+  const entry = usage.get(req.ipKey) || { calls:0, costCents:0, limitHits:0 };
   const premium = isPremium(req);
 
   if (!premium && entry.calls >= FREE_DAILY_LIMIT) {
     counters.limit402++; entry.limitHits++; usage.set(req.ipKey, entry);
-    return res.status(402).json({ message: `Daily free limit (${FREE_DAILY_LIMIT}) reached.` });
+    return res.status(402).json({ message:`Daily free limit (${FREE_DAILY_LIMIT}) reached.` });
   }
 
   if (!premium && needCaptcha(req)) {
     const token = req.headers['x-turnstile-token'] || req.body?.turnstileToken;
-    const ok = await verifyTurnstile(String(token || ''), req.realIp);
-    if (!ok) return res.status(401).json({ error: 'captcha_failed' });
+    const ok = await verifyTurnstile(String(token||''), req.realIp);
+    if (!ok) return res.status(401).json({ error:'captcha_failed' });
   }
 
   const b = req.body || {};
@@ -220,9 +220,9 @@ app.post('/generate', async (req, res) => {
 
   const inTok = Math.ceil((jobPost.length + skills.length + 300)/4);
   const outTok = 350 * n;
-  const estCost = +(((inTok + outTok) * 0.0000006).toFixed(6));
+  const estCost = +(((inTok + outTok)*0.0000006).toFixed(6)); // keep an eye on spend
 
-  try {
+  try{
     const resp = await openai.chat.completions.create({
       model: env.OPENAI_MODEL,
       messages: [
@@ -233,30 +233,30 @@ app.post('/generate', async (req, res) => {
       temperature: 0.6,
       n
     });
-    const emails = (resp.choices || []).map(c => (c.message?.content || '').trim()).filter(Boolean);
-    entry.calls += 1; entry.costCents += Math.round(estCost * 100); usage.set(req.ipKey, entry);
+    const emails = (resp.choices||[]).map(c => (c.message?.content||'').trim()).filter(Boolean);
+    entry.calls += 1; entry.costCents += Math.round(estCost*100); usage.set(req.ipKey, entry);
     res.set('X-Estimated-Cost-USD', String(estCost));
     res.json({ emails });
-  } catch (e) {
-    if (e?.status === 429) return res.status(429).json({ error: 'openai_rate_limited' });
+  }catch(e){
+    if (e?.status === 429) return res.status(429).json({ error:'openai_rate_limited' });
     console.error('[generate] failed:', e?.message);
-    res.status(500).json({ error: 'ai_failed' });
+    res.status(500).json({ error:'ai_failed' });
   }
 });
 
-app.get('/metrics', (req, res) => {
-  const today = dayKey();
-  let uniqueIPs = 0, costCents = 0;
+app.get('/metrics', (req,res)=>{
+  const today = todayKey();
+  let uniqueIPs=0, costCents=0;
   for (const [k,v] of usage.entries()) if (k.endsWith(today)) { uniqueIPs++; costCents += (v.costCents||0); }
-  res.json({ today, uniqueIPs, totalCalls: counters.totalCalls, limit402: counters.limit402, estCostUSD: +(costCents/100).toFixed(4) });
+  res.json({ today, uniqueIPs, totalCalls:counters.totalCalls, limit402:counters.limit402, estCostUSD:+(costCents/100).toFixed(4) });
 });
 
 if (env.STRIPE_WEBHOOK_SECRET) {
-  app.post('/stripe/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  app.post('/stripe/webhook', express.raw({ type:'application/json' }), (req,res)=>{
     try {
       const sig = req.headers['stripe-signature'];
       stripe.webhooks.constructEvent(req.body, sig, env.STRIPE_WEBHOOK_SECRET);
-      res.json({ received: true });
+      res.json({ received:true });
     } catch (err) {
       res.status(400).send(`Webhook Error: ${err.message}`);
     }
@@ -265,7 +265,7 @@ if (env.STRIPE_WEBHOOK_SECRET) {
 
 app.get('/', (req,res)=> res.sendFile(path.join(__dirname,'public','index.html')));
 
-app.listen(Number(env.PORT), () => {
+app.listen(Number(env.PORT), ()=>{
   console.log(`AutoPitch AI up on :${env.PORT}`);
-  if (!env.APP_SECRET) console.warn('[warn] APP_SECRET missing; using runtime secret (set APP_SECRET in Render for stable cookies)`);
+  if (!env.APP_SECRET) console.warn('[warn] APP_SECRET missing; using runtime secret (set APP_SECRET in Render for stable cookies)');
 });
