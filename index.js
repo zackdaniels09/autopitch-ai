@@ -14,7 +14,7 @@ import crypto from 'crypto';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/* Env (promo removed; APP_SECRET optional with runtime fallback) */
+/* -------------------- ENV -------------------- */
 const Env = z.object({
   PORT: z.string().default('3000'),
   OPENAI_API_KEY: z.string(),
@@ -23,7 +23,7 @@ const Env = z.object({
   STANDARD_PRICE_ID: z.string(),
   PREMIUM_PRICE_ID: z.string(),
   APP_BASE_URL: z.string().url(),
-  APP_SECRET: z.string().min(32).optional(),
+  APP_SECRET: z.string().min(32).optional(),      // fallback below keeps server up
   FREE_DAILY_LIMIT: z.string().default('5'),
   RATE_LIMIT_MAX: z.string().default('10'),
   RATE_LIMIT_WINDOW_MS: z.string().default('60000'),
@@ -36,11 +36,14 @@ let env;
 try { env = Env.parse(process.env); }
 catch (e) { console.error('ENV ERROR:', e?.issues ?? e); process.exit(1); }
 
+// why: don’t brick the app if APP_SECRET is missing; set it in Render when you can
 const RUNTIME_SECRET = env.APP_SECRET || crypto.randomBytes(48).toString('hex');
 
+/* -------------------- Clients -------------------- */
 const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
 
+/* -------------------- App & Security -------------------- */
 const app = express();
 app.set('trust proxy', true);
 
@@ -55,6 +58,7 @@ app.use(cors({
   },
   credentials: true
 }));
+
 app.use(helmet({
   crossOriginOpenerPolicy: { policy: 'same-origin' },
   contentSecurityPolicy: {
@@ -70,8 +74,10 @@ app.use(helmet({
   },
   referrerPolicy: { policy: 'no-referrer' }
 }));
+
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser(RUNTIME_SECRET));
+
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: true,
   setHeaders: (res, file) => {
@@ -79,9 +85,10 @@ app.use(express.static(path.join(__dirname, 'public'), {
   }
 }));
 
-/* Abuse controls */
+/* -------------------- Abuse Controls -------------------- */
 const FREE_DAILY_LIMIT = Number(env.FREE_DAILY_LIMIT);
 const CAPTCHA_AFTER = 3;
+
 const burstLimiter = rateLimit({
   windowMs: Number(env.RATE_LIMIT_WINDOW_MS),
   max: Number(env.RATE_LIMIT_MAX),
@@ -91,29 +98,34 @@ const burstLimiter = rateLimit({
 app.use(burstLimiter);
 
 const dayKey = () => new Date().toISOString().slice(0, 10);
-const usage = new Map();
+const usage = new Map(); // key: `${ip}|${day}` -> { calls, costCents, limitHits }
 const counters = { totalCalls: 0, limit402: 0 };
 
-function isBotUA(ua=''){ ua = ua.toLowerCase(); return !ua || /(bot|spider|crawl|curl|wget|httpclient|python-requests|scrapy)/.test(ua); }
-function isPremium(req){ return req.signedCookies.ap_premium === '1'; }
-function incUsage(req, calls=1, costCents=0){
-  const k = `${String(req.headers['cf-connecting-ip'] || req.ip || '')}|${dayKey()}`;
-  const v = usage.get(k) || { calls:0, costCents:0, limitHits:0 };
-  v.calls += calls; v.costCents += costCents; usage.set(k, v);
-  req.ipKey = k;
+function isBotUA(ua = '') {
+  ua = ua.toLowerCase();
+  return !ua || /(bot|spider|crawl|curl|wget|httpclient|python-requests|scrapy)/.test(ua);
 }
-function needCaptcha(req){ if (isPremium(req)) return false; const v = usage.get(req.ipKey); return (v?.calls||0) >= CAPTCHA_AFTER; }
-async function verifyTurnstile(token, ip){
+function isPremium(req) { return req.signedCookies.ap_premium === '1'; }
+function needCaptcha(req) {
+  if (isPremium(req)) return false;
+  const v = usage.get(req.ipKey);
+  return (v?.calls || 0) >= CAPTCHA_AFTER;
+}
+async function verifyTurnstile(token, ip) {
   if (!env.TURNSTILE_SECRET_KEY) return true;
-  try{
+  try {
     const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ secret: env.TURNSTILE_SECRET_KEY, response: token || '', remoteip: ip || '' })
     });
-    const j = await r.json(); return !!j.success;
-  }catch{ return false; }
+    const j = await r.json();
+    return !!j.success;
+  } catch { return false; }
 }
-app.use((req,res,next)=>{
+
+/* attach ip + quick UA sanity */
+app.use((req, res, next) => {
   const ip = String(req.headers['cf-connecting-ip'] || req.ip || '');
   req.realIp = ip;
   req.ipKey = `${ip}|${dayKey()}`;
@@ -126,7 +138,7 @@ app.use((req,res,next)=>{
   next();
 });
 
-/* Routes */
+/* -------------------- Routes -------------------- */
 app.get('/health', (req, res) => {
   res.json({
     ok: true,
@@ -139,6 +151,7 @@ app.get('/health', (req, res) => {
     turnstile_site_key: env.TURNSTILE_SITE_KEY || null
   });
 });
+
 app.get('/me', (req, res) => res.json({ premium: isPremium(req) }));
 
 app.post('/checkout', async (req, res) => {
@@ -147,7 +160,7 @@ app.post('/checkout', async (req, res) => {
     const price = plan === 'premium' ? env.PREMIUM_PRICE_ID : env.STANDARD_PRICE_ID;
     if (!price) return res.status(400).json({ error: 'bad_plan' });
 
-    // IMPORTANT: do NOT send `customer_creation` with mode: 'subscription'
+    // IMPORTANT: no customer_creation in subscription mode
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price, quantity: 1 }],
@@ -156,7 +169,7 @@ app.post('/checkout', async (req, res) => {
       allow_promotion_codes: true
     });
 
-    return res.json({ url: session.url });
+    res.json({ url: session.url });
   } catch (e) {
     console.error('[checkout] failed:', e?.message);
     res.status(500).json({ error: 'checkout_failed', message: e?.message });
@@ -182,10 +195,13 @@ app.post('/claim', async (req, res) => {
     const { session_id } = req.body || {};
     if (!session_id) return res.status(400).json({ error: 'session_id_required' });
     const session = await stripe.checkout.sessions.retrieve(session_id, { expand: ['subscription'] });
-    const active = session?.subscription && ['trialing','active','past_due'].includes(session.subscription.status);
+    const active = session?.subscription && ['trialing', 'active', 'past_due'].includes(session.subscription.status);
     if (!active) return res.status(402).json({ error: 'no_active_subscription' });
-    res.cookie('ap_premium', '1', { httpOnly:true, secure:true, sameSite:'lax', maxAge: 30*24*3600*1000, signed:true });
-    res.json({ premium:true });
+
+    res.cookie('ap_premium', '1', {
+      httpOnly: true, secure: true, sameSite: 'lax', maxAge: 30 * 24 * 3600 * 1000, signed: true
+    });
+    res.json({ premium: true });
   } catch (e) {
     console.error('[claim] failed:', e?.message);
     res.status(500).json({ error: 'claim_failed' });
@@ -194,45 +210,46 @@ app.post('/claim', async (req, res) => {
 
 app.post('/generate', async (req, res) => {
   counters.totalCalls++;
-  incUsage(req, 0, 0);
-  const v = usage.get(req.ipKey) || { calls:0, costCents:0, limitHits:0 };
+  const entry = usage.get(req.ipKey) || { calls: 0, costCents: 0, limitHits: 0 };
   const premium = isPremium(req);
 
-  if (!premium && v.calls >= FREE_DAILY_LIMIT) {
-    counters.limit402++; v.limitHits++; usage.set(req.ipKey, v);
+  if (!premium && entry.calls >= FREE_DAILY_LIMIT) {
+    counters.limit402++; entry.limitHits++; usage.set(req.ipKey, entry);
     return res.status(402).json({ message: `Daily free limit (${FREE_DAILY_LIMIT}) reached.` });
   }
+
   if (!premium && needCaptcha(req)) {
     const token = req.headers['x-turnstile-token'] || req.body?.turnstileToken;
     const ok = await verifyTurnstile(String(token || ''), req.realIp);
     if (!ok) return res.status(401).json({ error: 'captcha_failed' });
   }
 
-  const b = req.body || {};
-  const jobPost = String(b.jobPost || '');
-  const skills  = String(b.skills || '');
-  const tone    = String(b.tone || 'concise & friendly');
-  const cta     = String(b.cta || 'short intro call this week?');
-  const variants= Math.max(1, Math.min(3, Number(b.variants || 1)));
+  const body = req.body || {};
+  const jobPost = String(body.jobPost || '');
+  const skills  = String(body.skills || '');
+  const tone    = String(body.tone || 'concise & friendly');
+  const cta     = String(body.cta || 'short intro call this week?');
+  const variants= Math.max(1, Math.min(3, Number(body.variants || 1)));
   const n = premium ? variants : 1;
 
-  const inTok = Math.ceil((jobPost.length + skills.length + 300)/4);
+  const inTok = Math.ceil((jobPost.length + skills.length + 300) / 4);
   const outTok = 350 * n;
-  const estCost = +(((inTok + outTok) * 0.0000006).toFixed(6));
+  const estCost = +(((inTok + outTok) * 0.0000006).toFixed(6)); // rough
 
   try {
     const resp = await openai.chat.completions.create({
       model: env.OPENAI_MODEL,
       messages: [
-        { role:'system', content:'You are AutoPitch AI. Generate concise, personalized cold outreach emails from a job post and skills. Keep it under 180 words.' },
-        { role:'user', content:`Job post:\n${jobPost}\n\nMy skills:\n${skills}\n\nTone: ${tone}\nCTA: ${cta}\nReturn ${n} variant(s).` }
+        { role: 'system', content: 'You are AutoPitch AI. Generate concise, personalized cold outreach emails from a job post and skills. Keep it under 180 words.' },
+        { role: 'user', content: `Job post:\n${jobPost}\n\nMy skills:\n${skills}\n\nTone: ${tone}\nCTA: ${cta}\nReturn ${n} variant(s).` }
       ],
       max_tokens: 400,
       temperature: 0.6,
       n
     });
+
     const emails = (resp.choices || []).map(c => (c.message?.content || '').trim()).filter(Boolean);
-    v.calls += 1; v.costCents += Math.round(estCost * 100); usage.set(req.ipKey, v);
+    entry.calls += 1; entry.costCents += Math.round(estCost * 100); usage.set(req.ipKey, entry);
     res.set('X-Estimated-Cost-USD', String(estCost));
     res.json({ emails });
   } catch (e) {
@@ -245,8 +262,8 @@ app.post('/generate', async (req, res) => {
 app.get('/metrics', (req, res) => {
   const today = dayKey();
   let uniqueIPs = 0, costCents = 0;
-  for (const [k,v] of usage.entries()) if (k.endsWith(today)) { uniqueIPs++; costCents += (v.costCents||0); }
-  res.json({ today, uniqueIPs, totalCalls: counters.totalCalls, limit402: counters.limit402, estCostUSD: +(costCents/100).toFixed(4) });
+  for (const [k, v] of usage.entries()) if (k.endsWith(today)) { uniqueIPs++; costCents += (v.costCents || 0); }
+  res.json({ today, uniqueIPs, totalCalls: counters.totalCalls, limit402: counters.limit402, estCostUSD: +(costCents / 100).toFixed(4) });
 });
 
 if (env.STRIPE_WEBHOOK_SECRET) {
@@ -261,9 +278,9 @@ if (env.STRIPE_WEBHOOK_SECRET) {
   });
 }
 
-app.get('/', (req,res)=> res.sendFile(path.join(__dirname,'public','index.html')));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.listen(Number(env.PORT), () => {
-  console.log(`AutoPitch AI on :${env.PORT}`);
+  console.log(`AutoPitch AI up on :${env.PORT}`);
   if (!env.APP_SECRET) console.warn('[warn] APP_SECRET missing; using runtime secret (set APP_SECRET in Render for stable cookies)');
 });

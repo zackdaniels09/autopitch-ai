@@ -4,52 +4,59 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AutoPitch AI</title>
-  <meta name="color-scheme" content="light" />
+  <meta name="color-scheme" content="dark light" />
   <style>
-    :root { --border:#e5e7eb; --muted:#6b7280; }
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:0; background:#fff; color:#111; }
-    header { position:sticky; top:0; z-index:5; display:flex; align-items:center; justify-content:space-between;
-             padding:12px 16px; background:#fff; border-bottom:1px solid var(--border); }
-    .tag { font-size:12px; padding:4px 8px; border-radius:999px; background:#f3f4f6; color:#111; }
-    .shell { max-width:1200px; margin:0 auto; padding:18px 16px; }
-    .grid { display:grid; grid-template-columns: 1fr 340px; gap:18px; align-items:start; }
-    @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
-    .panel { border:1px solid var(--border); border-radius:12px; background:#fff; padding:14px; }
-    label { display:block; margin:10px 0 6px; font-weight:600; }
-    textarea, input, select { width:100%; border:1px solid var(--border); border-radius:10px; padding:10px; font:inherit; background:#fff; color:#111; }
-    textarea { resize:vertical; }
-    .row { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
-    @media (max-width: 700px) { .row { grid-template-columns: 1fr; } }
-    .actions { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
-    button { padding:10px 14px; border-radius:10px; border:1px solid #111; background:#fff; color:#111; cursor:pointer; }
-    button.primary { background:#111; color:#fff; border-color:#111; }
-    .hint { font-size:12px; color:var(--muted); }
-    .results { display:grid; gap:12px; }
-    .card { border:1px solid var(--border); border-radius:12px; padding:12px; background:#fff; }
-    .card pre { white-space:pre-wrap; margin:0; }
-    /* Sidebar plans */
-    .price-card { border:1px solid var(--border); border-radius:12px; padding:12px; background:#fff; display:flex; flex-direction:column; gap:8px; }
-    .price-title { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
-    .price { font-weight:700; }
-    .bullets { margin:0; padding-left:18px; }
-    .bullets li { margin:4px 0; }
-    .sep { height:1px; background:var(--border); margin:10px 0; }
-    .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:24px; background:#111; color:#fff;
-             border:1px solid #111; padding:10px 14px; border-radius:10px; display:none; z-index:60; }
+    :root{
+      --bg:#0b1224;         /* deep dark blue */
+      --bg2:#0e1630;
+      --card:#111a38;
+      --ink:#eaf0ff;
+      --muted:#a3b1d6;
+      --accent:#3b82f6;     /* blue-500 */
+      --accent-ink:#0b1224;
+      --border:#1b2550;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:linear-gradient(180deg,var(--bg),var(--bg2));color:var(--ink)}
+    header{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:rgba(11,18,36,.7);backdrop-filter:blur(6px);border-bottom:1px solid var(--border)}
+    .brand{font-weight:700;letter-spacing:.2px}
+    .tag{font-size:12px;padding:4px 8px;border-radius:999px;background:#18224a;border:1px solid var(--border);color:var(--muted)}
+    .shell{max-width:1200px;margin:0 auto;padding:18px 16px}
+    .grid{display:grid;grid-template-columns:1fr 360px;gap:18px;align-items:start}
+    @media (max-width:960px){.grid{grid-template-columns:1fr}}
+    .panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px}
+    label{display:block;margin:10px 0 6px;font-weight:600;color:var(--muted)}
+    textarea,input,select{width:100%;border:1px solid var(--border);border-radius:10px;padding:10px;background:#0c1533;color:var(--ink)}
+    textarea{resize:vertical}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    @media (max-width:700px){.row{grid-template-columns:1fr}}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+    .btn{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);padding:10px 14px;border-radius:10px;cursor:pointer}
+    .btn.secondary{background:transparent;color:var(--ink);border-color:var(--border)}
+    .hint{font-size:12px;color:var(--muted)}
+    .results{display:grid;gap:12px}
+    .card{background:#0c1533;border:1px solid var(--border);border-radius:12px;padding:12px}
+    .card pre{white-space:pre-wrap;margin:0}
+    /* sidebar */
+    .price-card{background:#0c1533;border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
+    .price-title{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+    .price{font-weight:800}
+    .bullets{margin:0;padding-left:18px;color:var(--muted)}
+    .bullets li{margin:4px 0}
+    .sep{height:1px;background:var(--border);margin:10px 0}
+    .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;background:#0a1228;color:#eaf0ff;border:1px solid var(--border);padding:10px 14px;border-radius:10px;display:none;z-index:60}
   </style>
-  <!-- Turnstile (optional; only used if server asks after 3 free calls) -->
   <script defer src="https://challenges.cloudflare.com/turnstile/v0/api.js"></script>
 </head>
 <body>
   <header>
-    <strong>AutoPitch AI</strong>
+    <div class="brand">AutoPitch AI</div>
     <div id="planTag" class="tag">Plan: checking…</div>
   </header>
 
   <div class="shell">
     <div class="grid">
-      <!-- Left: Generator -->
+      <!-- LEFT: Generator -->
       <div class="panel">
         <p class="hint">Free: 5/day & 1 variant. Premium: up to 3 variants and priority generation.</p>
 
@@ -72,8 +79,8 @@
         </div>
 
         <div class="actions">
-          <button id="go" class="primary">Generate</button>
-          <button id="clear">Clear</button>
+          <button id="go" class="btn">Generate</button>
+          <button id="clear" class="btn secondary">Clear</button>
         </div>
 
         <div id="results" class="results"></div>
@@ -84,9 +91,9 @@
         </div>
       </div>
 
-      <!-- Right: Pricing Sidebar -->
+      <!-- RIGHT: Sidebar Plans -->
       <aside class="panel" aria-label="Plans">
-        <div class="price-card" id="stdCard">
+        <div class="price-card">
           <div class="price-title">
             <div><strong>Standard</strong></div>
             <div class="price">$19.99/mo</div>
@@ -99,12 +106,12 @@
             <li>Template library</li>
             <li>Email support (24–48h)</li>
           </ul>
-          <button id="buyStd">Subscribe to Standard</button>
+          <button id="buyStd" class="btn secondary">Subscribe to Standard</button>
         </div>
 
         <div class="sep"></div>
 
-        <div class="price-card" id="proCard">
+        <div class="price-card">
           <div class="price-title">
             <div><strong>Premium</strong></div>
             <div class="price">$39.99/mo</div>
@@ -118,12 +125,12 @@
             <li>Same-day priority support</li>
             <li>Early access features</li>
           </ul>
-          <button id="buyPro" class="primary">Subscribe to Premium</button>
+          <button id="buyPro" class="btn">Subscribe to Premium</button>
         </div>
 
         <div class="sep"></div>
 
-        <button id="manage">Manage billing</button>
+        <button id="manage" class="btn secondary">Manage billing</button>
       </aside>
     </div>
   </div>
@@ -131,14 +138,13 @@
   <div id="toast" class="toast"></div>
 
   <script>
-    // --- minimal helpers / wiring (why: neutral UI, reliable buttons)
+    /* WHY: friendly UX + reliable buttons */
     const MAX_FREE = 5;
     let turnstileToken = null;
     window.onTurnstileOK = (token) => { turnstileToken = token; document.getElementById('captchaWrap').style.display='none'; };
 
     function toast(msg){
-      const t = document.getElementById('toast');
-      t.textContent = msg; t.style.display = 'block';
+      const t = document.getElementById('toast'); t.textContent = msg; t.style.display = 'block';
       clearTimeout(window.__tt); window.__tt = setTimeout(()=> t.style.display='none', 3800);
     }
     async function me(){ try { const r = await fetch('/me', { credentials:'include' }); return r.json(); } catch { return { premium:false }; } }
@@ -164,9 +170,9 @@
         const card = document.createElement('div'); card.className='card';
         const pre  = document.createElement('pre'); pre.textContent = txt;
         const row  = document.createElement('div'); row.className='actions';
-        const b1   = document.createElement('button'); b1.textContent='Copy';
+        const b1   = document.createElement('button'); b1.className='btn secondary'; b1.textContent='Copy';
         b1.onclick = async()=>{ await navigator.clipboard.writeText(txt); toast('Copied.'); };
-        const b2   = document.createElement('button'); b2.textContent='Download .txt';
+        const b2   = document.createElement('button'); b2.className='btn secondary'; b2.textContent='Download .txt';
         b2.onclick = ()=>{ const blob=new Blob([txt],{type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`email-${i+1}.txt`; a.click(); };
         row.append(b1,b2); card.append(pre,row); box.append(card);
       });
@@ -187,14 +193,12 @@
       location.href = j.url;
     }
 
-    // Wire up UI
     document.getElementById('go').onclick = generate;
     document.getElementById('clear').onclick = () => { document.getElementById('results').innerHTML=''; };
     document.getElementById('buyStd').onclick = () => startCheckout('standard');
     document.getElementById('buyPro').onclick = () => startCheckout('premium');
     document.getElementById('manage').onclick = openPortal;
 
-    // Init
     (async () => {
       const m = await me();
       document.getElementById('planTag').textContent = `Plan: ${m.premium ? 'premium' : 'free'}`;
