@@ -1,51 +1,32 @@
-
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Success • AutoPitch AI</title>
-  <style>
-    :root { --bg:#0b0f19; --card:#121725; --text:#eef1f6; --muted:#9aa4b2; --brand:#6aa6ff; }
-    body { background: var(--bg); color: var(--text); font-family: system-ui, Arial, sans-serif; margin:0; }
-    .wrap { max-width: 720px; margin: 40px auto; padding: 0 16px; }
-    .card { background: var(--card); border: 1px solid #222940; border-radius: 14px; padding: 24px; }
-    .row { display:flex; gap:10px; margin-top:12px; }
-    .btn { display:inline-block; padding:10px 14px; border-radius:10px; text-decoration:none; font-weight:700; background: var(--brand); color:#0b0f19; border:0; cursor:pointer; }
-    p { color: var(--muted); }
-    code { background:#0e1322; border:1px solid #2a334b; padding:2px 6px; border-radius:6px; }
-  </style>
+  <title>AutoPitch — Success</title>
+  <style> body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;margin:0;padding:24px;background:#0b1020;color:#e8ecf5} .card{max-width:720px;margin:0 auto;background:#11162a;border:1px solid #1e2742;border-radius:14px;padding:18px} .row{display:flex;gap:10px;align-items:center;justify-content:space-between} .btn{padding:10px 14px;border-radius:10px;border:1px solid #1e2742;background:#0f173a;color:#e8ecf5;font-weight:600;cursor:pointer} .btn.primary{background:#6d7cff;border-color:#6d7cff;color:#fff} .muted{color:#a3acc0;font-size:14px} </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>You're in! 🎉</h1>
-      <p id="planLine">Plan: —</p>
-      <p>Head back to the app and start generating. Manage your subscription anytime from the billing portal.</p>
-      <div class="row">
-        <a class="btn" href="/">Go to AutoPitch AI</a>
-        <button class="btn" id="portalBtn">Manage billing</button>
-      </div>
-      <p style="margin-top:16px">Session: <code id="sess"></code></p>
+  <div class="card">
+    <h2>✅ You’re all set!</h2>
+    <p class="muted">Thanks for subscribing. This device is now being upgraded…</p>
+    <div class="row">
+      <button id="btn-app" class="btn">Back to app</button>
+      <button id="btn-manage" class="btn primary">Manage billing</button>
     </div>
   </div>
-
   <script>
-    function getParam(k){ return new URLSearchParams(location.search).get(k)||''; }
-    const plan = (getParam('plan')||'standard').toLowerCase();
-    const sessionId = getParam('session_id');
-    localStorage.setItem('ap_plan', plan);
-    document.getElementById('planLine').textContent = 'Plan: ' + plan.charAt(0).toUpperCase()+plan.slice(1);
-    document.getElementById('sess').textContent = sessionId || '(none)';
-
-    document.getElementById('portalBtn').onclick = async () => {
-      try {
-        const r = await fetch('/portal', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ session_id: sessionId }) });
-        const j = await r.json();
-        if (j?.url) { window.location.href = j.url; return; }
-        alert(j?.error || 'Portal unavailable.');
-      } catch(e){ alert('Portal error: ' + e.message); }
-    };
+    (async function(){
+      const params = new URLSearchParams(location.search);
+      const sessionId = params.get('session_id');
+      const appBase = location.origin;
+      document.getElementById('btn-app').onclick = () => location.href = appBase + '/';
+      document.getElementById('btn-manage').onclick = async () => {
+        const r = await fetch('/portal', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(sessionId ? { sessionId } : {}) });
+        const j = await r.json(); if (j.url) location.href = j.url; else alert('Could not open billing portal');
+      };
+      if (sessionId) { try { await fetch('/claim', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ sessionId }) }); } catch {} }
+    })();
   </script>
 </body>
 </html>
