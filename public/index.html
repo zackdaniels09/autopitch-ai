@@ -1,199 +1,260 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AutoPitch AI</title>
-  <meta name="color-scheme" content="dark light" />
-  <style>
-    :root{
-      --bg:#0b1224; --bg2:#0e1630; --card:#111a38; --ink:#eaf0ff; --muted:#a3b1d6;
-      --accent:#3b82f6; --accent-ink:#0b1224; --border:#1b2550;
-    }
-    *{box-sizing:border-box}
-    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:linear-gradient(180deg,var(--bg),var(--bg2));color:var(--ink)}
-    header{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:rgba(11,18,36,.7);backdrop-filter:blur(6px);border-bottom:1px solid var(--border)}
-    .brand{font-weight:700;letter-spacing:.2px}
-    .tag{font-size:12px;padding:4px 8px;border-radius:999px;background:#18224a;border:1px solid var(--border);color:var(--muted)}
-    .shell{max-width:1200px;margin:0 auto;padding:18px 16px}
-    .grid{display:grid;grid-template-columns:1fr 360px;gap:18px;align-items:start}
-    @media (max-width:960px){.grid{grid-template-columns:1fr}}
-    .panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px}
-    label{display:block;margin:10px 0 6px;font-weight:600;color:var(--muted)}
-    textarea,input,select{width:100%;border:1px solid var(--border);border-radius:10px;padding:10px;background:#0c1533;color:var(--ink)}
-    textarea{resize:vertical}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    @media (max-width:700px){.row{grid-template-columns:1fr}}
-    .actions{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
-    .btn{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);padding:10px 14px;border-radius:10px;cursor:pointer}
-    .btn.secondary{background:transparent;color:var(--ink);border-color:var(--border)}
-    .hint{font-size:12px;color:var(--muted)}
-    .results{display:grid;gap:12px}
-    .card{background:#0c1533;border:1px solid var(--border);border-radius:12px;padding:12px}
-    .card pre{white-space:pre-wrap;margin:0}
-    .price-card{background:#0c1533;border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
-    .price-title{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
-    .price{font-weight:800}
-    .bullets{margin:0;padding-left:18px;color:var(--muted)}
-    .bullets li{margin:4px 0}
-    .sep{height:1px;background:var(--border);margin:10px 0}
-    .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;background:#0a1228;color:#eaf0ff;border:1px solid var(--border);padding:10px 14px;border-radius:10px;display:none;z-index:60}
-  </style>
-  <script defer src="https://challenges.cloudflare.com/turnstile/v0/api.js"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AutoPitch AI</title>
+<meta name="color-scheme" content="dark" />
+<style>
+  :root{
+    --bg:#0b1224; --bg2:#0e1630; --card:#101a36; --ink:#eaf0ff; --muted:#a3b1d6;
+    --accent:#4f8cff; --accent-ink:#071026; --border:#1b2a55; --soft:#0c1533; --chip:#16244b;
+    --good:#7dd3fc;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,var(--bg),var(--bg2));color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .header{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-bottom:1px solid var(--border);background:rgba(11,18,36,.65);backdrop-filter:blur(6px);position:sticky;top:0;z-index:5}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700}
+  .dot{width:8px;height:8px;border-radius:999px;background:#8ab4ff;display:inline-block}
+  .top-right{display:flex;gap:8px}
+  .chip{background:var(--chip);border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:999px;font-size:12px}
+  .wrap{max-width:1120px;margin:0 auto;padding:18px}
+  .grid{display:grid;grid-template-columns:1fr 330px;gap:18px}
+  @media (max-width:980px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px}
+  .hint{color:var(--muted);font-size:12px;margin:0 0 8px}
+  label{display:block;margin:10px 0 6px;color:var(--muted);font-weight:600}
+  textarea,input,select{width:100%;background:var(--soft);border:1px solid var(--border);border-radius:10px;color:var(--ink);padding:10px}
+  textarea{resize:vertical}
+  .row3{display:grid;grid-template-columns:1fr 1fr 140px;gap:10px}
+  @media(max-width:720px){.row3{grid-template-columns:1fr}}
+  .caption{margin-top:6px;font-size:11px;color:var(--muted)}
+  .btn{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);padding:11px 14px;border-radius:10px;cursor:pointer;font-weight:600}
+  .btn.secondary{background:transparent;color:var(--ink);border-color:var(--border)}
+  .btn.block{width:100%}
+  .results{display:grid;gap:12px;margin-top:12px}
+  .card{background:var(--soft);border:1px solid var(--border);border-radius:10px;padding:12px}
+  .row-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .side-title{font-weight:800;margin-bottom:8px}
+  .side-box{background:var(--soft);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:10px}
+  .price{display:flex;align-items:center;justify-content:space-between;background:var(--soft);border:1px solid var(--border);border-radius:10px;padding:10px;margin-top:10px}
+  .price .tag{background:#183266;border:1px solid var(--border);padding:4px 8px;border-radius:8px;font-weight:800}
+  .sep{height:1px;background:var(--border);margin:10px 0}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:22px;background:#0a1228;color:#eaf0ff;border:1px solid var(--border);padding:10px 14px;border-radius:10px;display:none;z-index:60}
+  .footer{margin:18px auto 8px;max-width:1120px;text-align:center;color:var(--muted)}
+  .link{color:var(--good);text-decoration:none}
+</style>
+<script defer src="https://challenges.cloudflare.com/turnstile/v0/api.js"></script>
 </head>
 <body>
-  <header>
-    <div class="brand">AutoPitch AI</div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <div id="modelTag" class="tag">Model: gpt-4o-mini</div>
-      <div id="planTag" class="tag">Plan: checking…</div>
+  <div class="header">
+    <div class="brand"><span class="dot"></span> AutoPitch AI</div>
+    <div class="top-right">
+      <div id="planTag" class="chip">Plan: checking…</div>
+      <div id="rateTag" class="chip">Rate limit: —</div>
     </div>
-  </header>
+  </div>
 
-  <div class="shell">
+  <div class="wrap">
     <div class="grid">
-      <!-- Left: generator -->
+      <!-- LEFT: main -->
       <div class="panel">
-        <p class="hint">Free: 5/day & 1 variant. Premium: up to 3 variants and priority generation.</p>
+        <p class="hint">Paste the job, your skills, choose tone + CTA, and how many variants to generate.</p>
 
-        <label>Job post</label>
-        <textarea id="jobPost" rows="8" placeholder="Paste job description…"></textarea>
+        <label>Job description</label>
+        <textarea id="jobPost" rows="7" placeholder="Paste the job post here…"></textarea>
 
-        <div class="row">
-          <div>
-            <label>Your skills</label>
-            <textarea id="skills" rows="6" placeholder="e.g., React, Node, 5+ years B2B SaaS…"></textarea>
-          </div>
+        <label>Your skills/services</label>
+        <textarea id="skills" rows="6" placeholder="What you offer that matches the job…"></textarea>
+
+        <div class="row3">
           <div>
             <label>Tone</label>
-            <input id="tone" placeholder="e.g., concise & friendly" />
-            <label>Call to action</label>
-            <input id="cta" placeholder="e.g., short intro call this week?" />
-            <label>Variants (premium up to 3)</label>
-            <select id="variants"><option>1</option><option>2</option><option>3</option></select>
+            <select id="tone">
+              <option>Friendly</option><option>Concise</option><option>Persuasive</option><option>Confident</option>
+            </select>
+          </div>
+          <div>
+            <label>CTA style</label>
+            <select id="cta">
+              <option>Book a quick call</option>
+              <option>Open to a short intro?</option>
+              <option>Can I send 2–3 ideas?</option>
+              <option>Reply if interested</option>
+            </select>
+          </div>
+          <div>
+            <label>Variants</label>
+            <select id="variants"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
           </div>
         </div>
+        <div class="caption">Standard: up to 3 per run • Premium: up to 5</div>
 
-        <div class="actions">
-          <button id="go" class="btn">Generate</button>
-          <button id="clear" class="btn secondary">Clear</button>
+        <div style="margin-top:10px">
+          <button id="go" class="btn block">Generate Emails</button>
         </div>
-
-        <div id="results" class="results"></div>
 
         <div id="captchaWrap" style="display:none;margin-top:12px;">
           <div class="hint">Please complete the check to continue:</div>
           <div class="cf-turnstile" data-sitekey="" data-callback="onTurnstileOK"></div>
         </div>
+
+        <div id="results" class="results"></div>
       </div>
 
-      <!-- Right: pricing sidebar -->
+      <!-- RIGHT: sidebar -->
       <aside class="panel">
-        <div class="price-card">
-          <div class="price-title"><div><strong>Standard</strong></div><div class="price">$19.99/mo</div></div>
-          <ul class="bullets">
-            <li>Up to 300 emails/month</li>
+        <div class="side-title">Saved Templates</div>
+        <div class="side-box" id="savedBox">
+          <div id="savedList" class="hint">No saved templates yet.</div>
+          <div class="row-actions" style="margin-top:10px">
+            <button id="exportCsv" class="btn secondary">Export all (.csv)</button>
+            <button id="clearAll" class="btn secondary">Clear all</button>
+          </div>
+        </div>
+
+        <div class="side-title" style="margin-top:14px">Upgrade for more power</div>
+        <div class="side-box">
+          <div class="price">
+            <div><strong>Standard</strong></div>
+            <div class="tag">$19/mo</div>
+          </div>
+          <ul class="hint" style="margin:10px 0 0 16px">
+            <li>Fair-use: up to 300/mo</li>
             <li>Tone & CTA controls</li>
-            <li>1–3 variants per prompt</li>
             <li>Save, copy, CSV export</li>
-            <li>Template library</li>
-            <li>Email support (24–48h)</li>
+            <li>Templates library</li>
           </ul>
-          <button id="buyStd" class="btn secondary">Subscribe to Standard</button>
+          <button id="buyStd" class="btn secondary" style="margin-top:10px">Subscribe — Standard</button>
+
+          <div class="sep"></div>
+
+          <div class="price">
+            <div><strong>Premium</strong></div>
+            <div class="tag">$39/mo</div>
+          </div>
+          <ul class="hint" style="margin:10px 0 0 16px">
+            <li>Higher-quality model</li>
+            <li>Fair-use: up to 1,500/mo</li>
+            <li>Priority rate limits</li>
+            <li>Priority support</li>
+          </ul>
+          <button id="buyPro" class="btn" style="margin-top:10px">Subscribe — Premium</button>
+
+          <div class="hint" style="margin-top:8px">7-day refund guarantee.</div>
         </div>
 
-        <div class="sep"></div>
-
-        <div class="price-card">
-          <div class="price-title"><div><strong>Premium</strong></div><div class="price">$39.99/mo</div></div>
-          <ul class="bullets">
-            <li>Unlimited emails</li>
-            <li>Priority generation</li>
-            <li>1–3 variants per prompt</li>
-            <li>Save, copy, CSV export</li>
-            <li>Extended templates</li>
-            <li>Same-day priority support</li>
-            <li>Early access features</li>
-          </ul>
-          <button id="buyPro" class="btn">Subscribe to Premium</button>
+        <div class="side-title" style="margin-top:14px">FAQ</div>
+        <div class="side-box">
+          <div class="hint"><strong>Can I cancel anytime?</strong><br/>Yes. Manage your subscription from the billing portal after purchase.</div>
+          <div class="sep"></div>
+          <div class="hint"><strong>Do you offer refunds?</strong><br/>We offer a 7-day refund window if you’re not happy. Email support.</div>
+          <div class="sep"></div>
+          <div class="hint"><strong>Is my data safe?</strong><br/>We only store what’s needed to run the app. See the Privacy page.</div>
+          <button id="manage" class="btn secondary" style="margin-top:10px">Manage billing</button>
         </div>
-
-        <div class="sep"></div>
-
-        <button id="manage" class="btn secondary">Manage billing</button>
       </aside>
     </div>
   </div>
 
   <div id="toast" class="toast"></div>
+  <div class="footer">Contact support • <a class="link" href="/terms.html">Terms</a> • <a class="link" href="/privacy.html">Privacy</a></div>
 
-  <script>
-    const MAX_FREE = 5;
-    let turnstileToken = null;
-    window.onTurnstileOK = (token)=>{ turnstileToken = token; document.getElementById('captchaWrap').style.display='none'; };
+<script>
+  // WHY: local save + export gives the sidebar its behavior without a backend table.
+  const MAX_FREE = 5;
+  let turnstileToken = null;
+  window.onTurnstileOK = (token)=>{ turnstileToken = token; document.getElementById('captchaWrap').style.display='none'; };
 
-    function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(window.__tt); window.__tt=setTimeout(()=>t.style.display='none',3800); }
-    async function me(){ try{ const r=await fetch('/me',{credentials:'include'}); return r.json(); }catch{ return {premium:false}; } }
-    async function health(){ try{ const r=await fetch('/health'); return r.json(); }catch{ return {}; } }
+  const $ = (id)=>document.getElementById(id);
+  const toast = (msg)=>{ const t=$('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(window.__tt); window.__tt=setTimeout(()=>t.style.display='none',3500); };
 
-    async function generate(){
-      const jobPost = document.getElementById('jobPost').value.trim();
-      const skills  = document.getElementById('skills').value.trim();
-      const tone    = document.getElementById('tone').value.trim() || 'concise & friendly';
-      const cta     = document.getElementById('cta').value.trim()  || 'short intro call this week?';
-      const variants= Number(document.getElementById('variants').value);
-      const body = { jobPost, skills, tone, cta, variants, turnstileToken };
+  const savedKey='ap_saved';
+  const loadSaved=()=>{ try{ return JSON.parse(localStorage.getItem(savedKey)||'[]'); }catch{ return []; } };
+  const saveSaved=(arr)=> localStorage.setItem(savedKey, JSON.stringify(arr));
+  function renderSaved(){
+    const list = $('savedList'); const items = loadSaved();
+    if (!items.length){ list.innerHTML = '<div class="hint">No saved templates yet.</div>'; return; }
+    list.innerHTML = '';
+    items.forEach((it, idx)=>{
+      const div = document.createElement('div');
+      div.style.margin='6px 0'; div.style.cursor='pointer';
+      div.textContent = it.content.slice(0, 70).replace(/\s+/g,' ') + (it.content.length>70?'…':'');
+      div.onclick = ()=> {
+        navigator.clipboard.writeText(it.content);
+        toast('Template copied.');
+      };
+    });
+  }
 
-      const res = await fetch('/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'include' });
-      if (res.status===401){ toast('Please complete the check and try again.'); document.getElementById('captchaWrap').style.display='block'; return; }
-      if (res.status===402){ const j=await res.json().catch(()=>({})); toast(j.message || `You’ve hit today’s free limit (${MAX_FREE}). Upgrade to continue.`); return; }
-      if (!res.ok){ toast('Generation failed. Try again.'); return; }
+  async function me(){ try{ const r=await fetch('/me',{credentials:'include'}); return r.json(); }catch{ return { plan:'free', premium:false }; } }
+  async function health(){ try{ const r=await fetch('/health'); return r.json(); }catch{ return {}; } }
 
-      const data = await res.json();
-      const results = document.getElementById('results'); results.innerHTML='';
-      (data.emails||[]).forEach((txt,i)=>{
-        const card=document.createElement('div'); card.className='card';
-        const pre=document.createElement('pre'); pre.textContent=txt;
-        const row=document.createElement('div'); row.className='actions';
-        const b1=document.createElement('button'); b1.className='btn secondary'; b1.textContent='Copy';
-        b1.onclick=async()=>{ await navigator.clipboard.writeText(txt); toast('Copied.'); };
-        const b2=document.createElement('button'); b2.className='btn secondary'; b2.textContent='Download .txt';
-        b2.onclick=()=>{ const blob=new Blob([txt],{type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`email-${i+1}.txt`; a.click(); };
-        row.append(b1,b2); card.append(pre,row); results.append(card);
-      });
-    }
+  async function generate(){
+    const jobPost = $('jobPost').value.trim();
+    const skills  = $('skills').value.trim();
+    const tone    = $('tone').value.trim() || 'Friendly';
+    const cta     = $('cta').value.trim()  || 'Book a quick call';
+    const variants= Number($('variants').value);
+    const body = { jobPost, skills, tone, cta, variants, turnstileToken };
 
-    async function startCheckout(plan){
-      try{
-        const r = await fetch('/checkout', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ plan }), credentials:'include' });
-        const j = await r.json().catch(()=>({}));
-        if (!r.ok || !j.url) throw new Error(j.message || j.error || 'Checkout failed.');
-        location.href = j.url;
-      }catch(err){ toast(err.message || 'Checkout failed.'); }
-    }
-    async function openPortal(){
-      const email = prompt('Enter your billing email:'); if (!email) return;
-      const r = await fetch('/portal', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ email }), credentials:'include' });
+    const res = await fetch('/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body), credentials:'include' });
+    if (res.status===401){ toast('Please complete the check and try again.'); $('captchaWrap').style.display='block'; return; }
+    if (res.status===402){ const j=await res.json().catch(()=>({})); toast(j.message || `You’ve hit today’s free limit (${MAX_FREE}).`); return; }
+    if (!res.ok){ toast('Generation failed. Try again.'); return; }
+
+    const data = await res.json();
+    const results = $('results'); results.innerHTML='';
+    (data.emails||[]).forEach((txt,i)=>{
+      const card = document.createElement('div'); card.className='card';
+      const pre = document.createElement('pre'); pre.textContent = txt; pre.style.whiteSpace='pre-wrap'; pre.style.margin=0;
+      const row = document.createElement('div'); row.className='row-actions';
+      const save = document.createElement('button'); save.className='btn secondary'; save.textContent='Save';
+      save.onclick = ()=>{ const arr=loadSaved(); arr.unshift({ ts:Date.now(), content:txt }); saveSaved(arr); renderSaved(); toast('Saved to Templates.'); };
+      const copy = document.createElement('button'); copy.className='btn secondary'; copy.textContent='Copy';
+      copy.onclick = async()=>{ await navigator.clipboard.writeText(txt); toast('Copied.'); };
+      const dl = document.createElement('button'); dl.className='btn secondary'; dl.textContent='Download .txt';
+      dl.onclick = ()=>{ const blob=new Blob([txt],{type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`email-${i+1}.txt`; a.click(); };
+      row.append(save,copy,dl); card.append(pre,row); results.append(card);
+    });
+  }
+
+  async function startCheckout(plan){
+    try{
+      const r = await fetch('/checkout',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({plan}), credentials:'include' });
       const j = await r.json().catch(()=>({}));
-      if (!r.ok || !j.url) return toast('Portal unavailable.');
+      if (!r.ok || !j.url) throw new Error(j.message||j.error||'Checkout failed.');
       location.href = j.url;
-    }
+    }catch(err){ toast(err.message||'Checkout failed.'); }
+  }
+  async function openPortal(){
+    const email = prompt('Enter your billing email:'); if (!email) return;
+    const r = await fetch('/portal',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email}), credentials:'include' });
+    const j = await r.json().catch(()=>({}));
+    if (!r.ok || !j.url) return toast('Portal unavailable.');
+    location.href = j.url;
+  }
 
-    document.getElementById('go').onclick = generate;
-    document.getElementById('clear').onclick = ()=>{ document.getElementById('results').innerHTML=''; };
-    document.getElementById('buyStd').onclick = ()=> startCheckout('standard');
-    document.getElementById('buyPro').onclick = ()=> startCheckout('premium');
-    document.getElementById('manage').onclick = openPortal;
+  $('go').onclick = generate;
+  $('buyStd').onclick = ()=> startCheckout('standard');
+  $('buyPro').onclick = ()=> startCheckout('premium');
+  $('manage').onclick = openPortal;
 
-    (async()=>{
-      const h = await health();
-      document.getElementById('modelTag').textContent = `Model: ${h.model || 'gpt-4o-mini'}`;
-      if (h && h.has_turnstile && h.turnstile_site_key) {
-        document.querySelector('.cf-turnstile').setAttribute('data-sitekey', h.turnstile_site_key);
-      }
-      const m = await me();
-      document.getElementById('planTag').textContent = `Plan: ${m.premium ? 'premium' : 'free'}`;
-    })();
-  </script>
+  $('exportCsv').onclick = ()=>{
+    const items = loadSaved(); if (!items.length) return toast('Nothing to export.');
+    const rows = [['created_at','content'], ...items.map(i=>[new Date(i.ts).toISOString(), i.content.replace(/\n/g,'\\n')])];
+    const csv = rows.map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='autopitch-templates.csv'; a.click();
+  };
+  $('clearAll').onclick = ()=>{ localStorage.removeItem(savedKey); renderSaved(); toast('Templates cleared.'); };
+
+  (async()=>{
+    renderSaved();
+    const h = await health();
+    if (h?.turnstile_site_key) document.querySelector('.cf-turnstile').setAttribute('data-sitekey', h.turnstile_site_key);
+    const m = await me();
+    $('planTag').textContent = `Plan: ${m.plan}`;
+  })();
+</script>
 </body>
 </html>
