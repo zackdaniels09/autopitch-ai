@@ -1,257 +1,153 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AutoPitch AI</title>
+  <meta name="color-scheme" content="light dark" />
   <style>
-    :root { --bg:#0b1020; --card:#11162a; --muted:#a3acc0; --text:#e8ecf5; --accent:#6d7cff; --border:#1e2742; }
-    * { box-sizing: border-box; }
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background: linear-gradient(180deg,#090e1d, #0d1430); color: var(--text); }
-    header { padding: 18px 20px; border-bottom: 1px solid var(--border); position: sticky; top:0; z-index: 40; backdrop-filter: blur(6px); background: rgba(9,14,29,.72); }
-    header .row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-    header h1 { font-size: 18px; margin:0; letter-spacing:.2px; }
-    header .right { display:flex; align-items:center; gap:10px; color: var(--muted); font-size: 12px; }
-
-    main { padding: 24px 20px 110px; max-width: 1100px; margin: 0 auto; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-    .card { background: var(--card); border:1px solid var(--border); border-radius: 14px; padding: 14px; }
-    .card h3 { margin: 0 0 10px; font-size: 14px; color:#cfd5e6; }
-
-    textarea, select, input, button { width:100%; border-radius: 10px; border:1px solid var(--border); background:#0c1330; color: var(--text); padding:10px 12px; font-size:14px; }
-    textarea { min-height: 180px; resize: vertical; }
-    select, input { background:#0f173a; }
-    label { display:block; font-size:12px; color:var(--muted); margin: 8px 0 6px; }
-
-    .controls { display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-    .actions { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
-    .btn { cursor: pointer; font-weight: 600; }
-    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .btn.ghost { background: transparent; }
-
-    .muted { color: var(--muted); }
-    .small { font-size: 12px; }
-
-    .results { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 14px; }
-    .email { white-space: pre-wrap; line-height: 1.4; font-size: 14px; background:#0b1330; border:1px dashed #263056; border-radius: 12px; padding: 12px; }
-    .email .top { display:flex; justify-content: space-between; align-items:center; margin-bottom: 8px; }
-
-    /* Sticky purchase bar */
-    .purchase-bar { position: fixed; left:0; right:0; bottom:0; z-index: 50; background: linear-gradient(180deg, rgba(9,14,29,.86), rgba(9,14,29,.98)); border-top: 1px solid var(--border); padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .purchase-wrap { width:100%; max-width:1100px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; gap:12px; }
-    .purchase-label { display:flex; flex-direction:column; }
-    .purchase-actions { display:flex; gap:8px; flex-wrap:wrap; }
-    .btn.inline { width: auto; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border); background: #0f173a; color:#e7ebf6; }
-    .btn.inline.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-
-    @media (max-width: 1100px) { .purchase-wrap { padding-right: 80px; } }
-    @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } .results { grid-template-columns: 1fr; } }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:0; padding-bottom:84px; }
+    header { padding:16px; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; background:rgba(255,255,255,.9); backdrop-filter: blur(6px); border-bottom:1px solid #eee; z-index:5; }
+    .tag { font-size:12px; padding:4px 8px; border-radius:999px; background:#eef2ff; color:#3730a3; }
+    main { max-width:1000px; margin:0 auto; padding:16px; }
+    textarea, input, select { width:100%; padding:10px; border:1px solid #ddd; border-radius:8px; }
+    label { font-weight:600; font-size:14px; margin:8px 0 4px; display:block; }
+    .row { display:grid; gap:12px; grid-template-columns:1fr 1fr; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+    .btn { border:1px solid #1e293b; background:#0f172a; color:#fff; padding:10px 14px; border-radius:8px; cursor:pointer; }
+    .btn.secondary { background:#fff; color:#0f172a; }
+    .results { display:grid; gap:12px; margin-top:16px; }
+    .card { border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff; }
+    .stickybar { position:fixed; left:0; right:0; bottom:0; border-top:1px solid #e5e7eb; background:#fff; padding:10px 12px; display:flex; gap:8px; align-items:center; z-index:50; }
+    .stickybar .spacer { flex:1; }
+    .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:76px; background:#11162a; color:#e8ecf5; border:1px solid #1e2742; padding:10px 14px; border-radius:10px; display:none; z-index:60; }
+    .hint { font-size:12px; color:#64748b; }
+    @media (max-width:700px){ .row { grid-template-columns:1fr; } }
   </style>
+  <!-- Turnstile (appears after 3 free calls) -->
+  <script defer src="https://challenges.cloudflare.com/turnstile/v0/api.js"></script>
 </head>
 <body>
-<header>
-  <div class="row">
-    <h1>AutoPitch AI</h1>
-    <div class="right small">
-      <span id="modelLabel">Model: gpt-4o-mini</span>
-      <span>•</span>
-      <span id="freeCounter">Free uses left: <strong id="freeLeft">—</strong></span>
-    </div>
-  </div>
-</header>
+  <header>
+    <div><strong>AutoPitch AI</strong></div>
+    <div id="planTag" class="tag">Plan: checking…</div>
+  </header>
+  <main>
+    <p class="hint">Paste a job post + your skills. Free users get 5 generations/day and 1 variant. Premium gets up to 3 variants.</p>
+    <label>Job post</label>
+    <textarea id="jobPost" rows="8" placeholder="Paste job description…"></textarea>
 
-<main>
-  <div class="grid">
-    <section class="card">
-      <h3>Inputs</h3>
-      <label for="jobPost">Job post</label>
-      <textarea id="jobPost" placeholder="Paste the job description..."></textarea>
-
-      <label for="skills">Your skills</label>
-      <textarea id="skills" placeholder="e.g., Python, FastAPI, customer onboarding, SDR experience"></textarea>
-
-      <div class="controls" style="margin-top:8px;">
-        <div>
-          <label for="tone">Tone</label>
-          <select id="tone">
-            <option value="neutral">Neutral</option>
-            <option value="friendly">Friendly</option>
-            <option value="formal">Formal</option>
-            <option value="casual">Casual</option>
-          </select>
-        </div>
-        <div>
-          <label for="cta">Call to action</label>
-          <select id="cta">
-            <option value="request_reply">Request reply</option>
-            <option value="book_call">Book call</option>
-            <option value="link_click">Click link</option>
-            <option value="custom">Custom</option>
-          </select>
-        </div>
-        <div>
-          <label for="customCta">Custom CTA</label>
-          <input id="customCta" placeholder="e.g., Can we partner for 2 weeks?" disabled />
-        </div>
-        <div>
-          <label for="variants">Variants</label>
-          <select id="variants">
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-          </select>
-          <div class="small muted">Server may limit free users to 1</div>
-        </div>
+    <div class="row">
+      <div>
+        <label>Your skills</label>
+        <textarea id="skills" rows="6" placeholder="e.g., React, Node, 5+ years B2B SaaS…"></textarea>
       </div>
-
-      <div class="actions" style="margin-top:12px;">
-        <button id="btnGenerate" class="btn primary">Generate emails</button>
-        <button id="btnExport" class="btn ghost">Export CSV</button>
-        <span id="lastCost" class="small muted"></span>
+      <div>
+        <label>Tone</label>
+        <input id="tone" placeholder="e.g., concise & friendly" />
+        <label>Call to action</label>
+        <input id="cta" placeholder="e.g., short intro call this week?" />
+        <label>Variants (premium up to 3)</label>
+        <select id="variants">
+          <option>1</option><option>2</option><option>3</option>
+        </select>
       </div>
-    </section>
-
-    <section class="card">
-      <h3>Results</h3>
-      <div id="results" class="results"></div>
-      <div id="emptyState" class="muted small">Generated emails will appear here. Use the copy buttons or export to CSV.</div>
-    </section>
-  </div>
-</main>
-
-<!-- Sticky purchase / billing bar (single instance for all viewports) -->
-<div class="purchase-bar" role="region" aria-label="Upgrade bar">
-  <div class="purchase-wrap">
-    <div class="purchase-label">
-      <strong>Upgrade</strong>
-      <span class="muted small">Standard for limits • Premium for unlimited & priority</span>
     </div>
-    <div class="purchase-actions">
-      <button class="btn inline" id="btn-standard">Standard — $19.99/mo</button>
-      <button class="btn inline primary" id="btn-premium">Premium — $39.99/mo</button>
-      <button class="btn inline" id="btn-portal" title="Manage billing">Manage billing</button>
-    </div>
-  </div>
-</div>
 
-<script>
-  // ==== Friendly toast + UI free cap (server is source of truth)
-  const MAX_FREE = 5;
-  function showToast(msg){
-    let t = document.getElementById('toast');
-    if(!t){
-      t = document.createElement('div');
-      t.id='toast';
-      t.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:76px;background:#11162a;border:1px solid #1e2742;color:#e8ecf5;padding:10px 14px;border-radius:10px;z-index:60;box-shadow:0 10px 20px rgba(0,0,0,.25)';
-      document.body.appendChild(t);
+    <div class="actions">
+      <button id="go" class="btn">Generate</button>
+      <button id="clear" class="btn secondary">Clear</button>
+    </div>
+
+    <div id="results" class="results"></div>
+
+    <div id="captchaWrap" style="display:none;margin-top:8px;">
+      <div class="hint">Please complete the check to continue:</div>
+      <div class="cf-turnstile" data-sitekey="{{TURNSTILE_SITE_KEY}}" data-callback="onTurnstileOK"></div>
+    </div>
+  </main>
+
+  <div class="stickybar">
+    <button id="buyStd" class="btn secondary">$19.99/mo Standard</button>
+    <button id="buyPro" class="btn">$39.99/mo Premium</button>
+    <div class="spacer"></div>
+    <button id="manage" class="btn secondary">Manage billing</button>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    // config
+    const MAX_FREE = 5;
+    const CAPTCHA_AFTER = 3;
+    let turnstileToken = null;
+    window.onTurnstileOK = (token) => { turnstileToken = token; document.getElementById('captchaWrap').style.display='none'; };
+
+    // helpers
+    function toast(msg){
+      const t = document.getElementById('toast');
+      t.textContent = msg; t.style.display = 'block';
+      clearTimeout(window.__tt); window.__tt = setTimeout(()=> t.style.display='none', 3800);
     }
-    t.textContent = msg; t.style.display='block';
-    clearTimeout(window.__toastT); window.__toastT=setTimeout(()=>{t.style.display='none';}, 4000);
-  }
+    async function me(){ try { const r = await fetch('/me'); return r.json(); } catch { return { premium:false }; } }
+    async function getPlanTag(){ const m = await me(); document.getElementById('planTag').textContent = `Plan: ${m.premium ? 'premium' : 'free'}`; }
 
-  // ==== Element refs
-  const $ = (id) => document.getElementById(id);
-  const jobPost = $('jobPost');
-  const skills = $('skills');
-  const tone = $('tone');
-  const cta = $('cta');
-  const customCta = $('customCta');
-  const variantsEl = $('variants');
-  const btnGenerate = $('btnGenerate');
-  const btnExport = $('btnExport');
-  const results = $('results');
-  const emptyState = $('emptyState');
-  const freeLeftEl = $('freeLeft');
-  const modelLabel = $('modelLabel');
+    // actions
+    async function generate(){
+      const jobPost = document.getElementById('jobPost').value.trim();
+      const skills = document.getElementById('skills').value.trim();
+      const tone = document.getElementById('tone').value.trim() || 'concise & friendly';
+      const cta = document.getElementById('cta').value.trim() || 'short intro call this week?';
+      const variants = Number(document.getElementById('variants').value);
 
-  // ==== Client-side free counter (UX hint only)
-  function getFreeUses(){ return Number(localStorage.getItem('ap_free') || '0'); }
-  function incFreeUses(){ const n=getFreeUses()+1; localStorage.setItem('ap_free', String(n)); updateFreeLeft(); }
-  function updateFreeLeft(){ const left = Math.max(0, MAX_FREE - getFreeUses()); freeLeftEl.textContent = left; }
-  updateFreeLeft();
+      const body = { jobPost, skills, tone, cta, variants, turnstileToken };
+      const res = await fetch('/generate', { method:'POST', headers:{'Content-Type': 'application/json'}, body: JSON.stringify(body) });
 
-  // Toggle custom CTA field
-  cta.addEventListener('change', () => {
-    const enable = cta.value === 'custom';
-    customCta.disabled = !enable; if (!enable) customCta.value = '';
-  });
+      if (res.status === 401) { toast('Please complete the check and try again.'); document.getElementById('captchaWrap').style.display='block'; return; }
+      if (res.status === 402) { const j = await res.json().catch(()=>({})); toast(j.message || `You’ve hit today’s free limit (${MAX_FREE}). Upgrade to continue.`); return; }
+      if (!res.ok) { toast('Generation failed. Try again.'); return; }
 
-  // Render results
-  function renderResults(list){
-    results.innerHTML='';
-    if(!list || !list.length){ emptyState.style.display='block'; return; }
-    emptyState.style.display='none';
-    list.forEach((text, i)=>{
-      const wrap=document.createElement('div'); wrap.className='email';
-      const top=document.createElement('div'); top.className='top';
-      const h=document.createElement('div'); h.textContent=`Variant ${i+1}`;
-      const copy=document.createElement('button'); copy.className='btn inline'; copy.textContent='Copy';
-      copy.addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(text); copy.textContent='Copied!'; setTimeout(()=>copy.textContent='Copy', 1200);}catch{} });
-      top.append(h, copy);
-      const pre=document.createElement('div'); pre.textContent=text;
-      wrap.append(top, pre);
-      results.append(wrap);
-    });
-  }
-
-  // Export CSV
-  btnExport.addEventListener('click', ()=>{
-    const emails = Array.from(results.querySelectorAll('.email div:nth-child(2)')).map(el=>el.textContent||'');
-    if(!emails.length) return alert('Nothing to export');
-    const rows = [['variant','email']].concat(emails.map((e,i)=>[String(i+1), e.replace(/\n/g,'\\n')]));
-    const csv = rows.map(r=>r.map(v=>`"${v.replace(/"/g,'""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='autopitch_emails.csv'; a.click();
-  });
-
-  // Generate handler
-  btnGenerate.addEventListener('click', async ()=>{
-    const body = {
-      jobPost: jobPost.value.trim(),
-      skills: skills.value.trim(),
-      tone: tone.value,
-      cta: cta.value,
-      customCta: cta.value==='custom' ? customCta.value.trim() : undefined,
-      variants: Number(variantsEl.value),
-      debugCost: true,
-    };
-    if(body.jobPost.length<10) return alert('Add a job post');
-    if(body.skills.length<2) return alert('Add your skills');
-
-    btnGenerate.disabled=true; const old=btnGenerate.textContent; btnGenerate.textContent='Generating…';
-    try{
-      const res = await fetch('/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-      if(res.status===402){ const j = await res.json().catch(()=>({})); showToast(j.message || `You’ve hit today’s free limit (${MAX_FREE}). Upgrade to continue.`); return; }
-      if(!res.ok){ const t=await res.text(); throw new Error(t||'Failed'); }
-      const cost = res.headers.get('X-Estimated-Cost-USD');
       const data = await res.json();
-      renderResults(data.variants||[]);
-      if(cost){ document.getElementById('lastCost').textContent = `Cost est: $${Number(cost).toFixed(4)}`; }
-      incFreeUses();
-    }catch(e){ alert('Generation failed. Try again.'); }
-    finally{ btnGenerate.disabled=false; btnGenerate.textContent=old; }
-  });
+      const box = document.getElementById('results'); box.innerHTML = '';
+      (data.emails || []).forEach((txt, i) => {
+        const card = document.createElement('div'); card.className='card';
+        const pre = document.createElement('pre'); pre.textContent = txt;
+        const row = document.createElement('div'); row.className='actions';
+        const copy = document.createElement('button'); copy.className='btn secondary'; copy.textContent='Copy';
+        copy.onclick = async () => { await navigator.clipboard.writeText(txt); toast('Copied.'); };
+        const save = document.createElement('button'); save.className='btn secondary'; save.textContent='Download .txt';
+        save.onclick = () => { const blob = new Blob([txt], {type:'text/plain'}); const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`email-${i+1}.txt`; a.click(); };
+        row.append(copy, save); card.append(pre, row); box.append(card);
+      });
+    }
 
-  // Checkout / Portal
-  async function startCheckout(plan){
-    try{
-      const r = await fetch('/checkout',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ plan }) });
-      const j = await r.json(); if(j?.url) location.href = j.url; else alert(j?.error||'Checkout failed');
-    }catch{ alert('Network error starting checkout'); }
-  }
-  async function openPortal(){
-    try{
-      const params = new URLSearchParams(location.search); const sessionId = params.get('session_id');
-      const r = await fetch('/portal',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(sessionId?{sessionId}:{}) });
-      const j = await r.json(); if(j?.url) location.href=j.url; else alert(j?.error||'Could not open billing portal');
-    }catch{ alert('Network error'); }
-  }
-  document.getElementById('btn-standard').addEventListener('click', ()=> startCheckout('standard'));
-  document.getElementById('btn-premium').addEventListener('click', ()=> startCheckout('premium'));
-  document.getElementById('btn-portal').addEventListener('click', openPortal);
+    async function startCheckout(plan){
+      const r = await fetch('/checkout', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ plan }) });
+      const j = await r.json();
+      if (!r.ok || !j.url) return toast('Checkout failed.');
+      location.href = j.url;
+    }
+    async function openPortal(){
+      const email = prompt('Enter your billing email:');
+      if (!email) return;
+      const r = await fetch('/portal', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email }) });
+      const j = await r.json();
+      if (!r.ok || !j.url) return toast('Portal unavailable.');
+      location.href = j.url;
+    }
 
-  // Health → update model label
-  (async()=>{ try{ const r = await fetch('/health'); const j = await r.json(); if(j?.model) modelLabel.textContent = `Model: ${j.model}`; }catch{} })();
-</script>
+    // wire
+    document.getElementById('go').onclick = generate;
+    document.getElementById('clear').onclick = () => { document.getElementById('results').innerHTML=''; };
+    document.getElementById('buyStd').onclick = () => startCheckout('standard');
+    document.getElementById('buyPro').onclick = () => startCheckout('premium');
+    document.getElementById('manage').onclick = openPortal;
+
+    // show captcha after 3 attempts (free only) -> server will also enforce
+    (async () => {
+      await getPlanTag();
+      // if free, server will tell us via /me; we reveal captcha box only when server demands (401), but we also show hint after some tries
+    })();
+  </script>
 </body>
 </html>
